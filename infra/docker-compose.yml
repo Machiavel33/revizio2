@@ -1,0 +1,72 @@
+name: revizio
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: revizio-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-revizio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-revizio_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-revizio}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-revizio} -d ${POSTGRES_DB:-revizio}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: revizio-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: revizio-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-revizio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-revizio_dev_secret}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Crée le bucket audio au démarrage (one-shot)
+  minio-init:
+    image: minio/mc:latest
+    container_name: revizio-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-revizio} ${MINIO_ROOT_PASSWORD:-revizio_dev_secret} &&
+      mc mb --ignore-existing local/${MINIO_BUCKET:-revizio-audio} &&
+      echo 'MinIO bucket ready';
+      "
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

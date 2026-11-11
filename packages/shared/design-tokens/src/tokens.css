@@ -1,0 +1,60 @@
+/* Revizio — CSS variables "DarkPunk Pro" (import dans globals.css) */
+:root {
+  --bg-base: #0a0b0f;
+  --bg-surface: #12141c;
+  --bg-elevated: #1a1d28;
+  --bg-inset: #07080b;
+
+  --accent-primary: #00e5ff;
+  --accent-secondary: #b14eff;
+  --accent-success: #00ffa3;
+  --accent-warning: #ffb800;
+  --accent-danger: #ff3b5c;
+
+  --text-primary: #f0f2f8;
+  --text-secondary: #a0a6b8;
+  --text-muted: #5c6274;
+  --text-on-accent: #0a0b0f;
+
+  --border-subtle: #1f2330;
+  --border-strong: #2e3444;
+  --border-glow: rgba(0, 229, 255, 0.35);
+
+  --grad-primary: linear-gradient(135deg, #00e5ff 0%, #b14eff 100%);
+  --grad-ambient: radial-gradient(circle at 30% 0%, rgba(0, 229, 255, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 100%, rgba(177, 78, 255, 0.08) 0%, transparent 50%);
+  --grad-rec: linear-gradient(135deg, #ff3b5c 0%, #ffb800 100%);
+
+  --glass-bg: rgba(18, 20, 28, 0.7);
+  --glass-blur: blur(16px) saturate(140%);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.06);
+
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --shadow-elevated: 0 8px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 229, 255, 0.15);
+  --shadow-glow-cyan: 0 0 20px rgba(0, 229, 255, 0.4), 0 0 40px rgba(0, 229, 255, 0.15);
+  --shadow-glow-violet: 0 0 20px rgba(177, 78, 255, 0.4), 0 0 40px rgba(177, 78, 255, 0.15);
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-full: 9999px;
+}
+
+body {
+  background-color: var(--bg-base);
+  background-image: var(--grad-ambient);
+  color: var(--text-primary);
+  font-family: "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
