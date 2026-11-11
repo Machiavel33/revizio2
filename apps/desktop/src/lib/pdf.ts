@@ -1,0 +1,107 @@
+/** Export PDF d'une fiche de révision (jsPDF). */
+
+import { jsPDF } from "jspdf";
+import type { StudySheet } from "./types";
+
+const MARGIN = 18;
+const PAGE_W = 210; // A4 mm
+const PAGE_H = 297;
+const CONTENT_W = PAGE_W - MARGIN * 2;
+
+export async function exportSheetToPdf(sheet: StudySheet): Promise<void> {
+  const c = sheet.content;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  let y = MARGIN;
+
+  const ensureSpace = (needed: number) => {
+    if (y + needed > PAGE_H - MARGIN) {
+      doc.addPage();
+      y = MARGIN;
+    }
+  };
+
+  const heading = (text: string, size = 14) => {
+    ensureSpace(12);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(size);
+    doc.setTextColor(20, 20, 30);
+    doc.text(text, MARGIN, y);
+    y += size * 0.5 + 3;
+  };
+
+  const paragraph = (text: string, size = 10) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(60, 60, 70);
+    const lines = doc.splitTextToSize(text, CONTENT_W);
+    for (const line of lines) {
+      ensureSpace(6);
+      doc.text(line, MARGIN, y);
+      y += 5;
+    }
+    y += 2;
+  };
+
+  // Titre
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(0, 120, 160);
+  doc.text(c.title || "Fiche de révision", MARGIN, y);
+  y += 10;
+
+  // Résumé
+  heading("Résumé");
+  paragraph(c.summary);
+  paragraph(`Temps de révision estimé : ${c.estimated_review_time_min} min`, 9);
+
+  // Notions clés
+  if (c.key_concepts.length) {
+    heading("Notions clés");
+    for (const k of c.key_concepts) {
+      ensureSpace(10);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(20, 20, 30);
+      doc.text(`• ${k.term}`, MARGIN, y);
+      y += 5;
+      paragraph(k.definition, 9);
+    }
+  }
+
+  // Sections
+  for (const s of c.sections) {
+    heading(s.heading, 12);
+    for (const p of s.points) {
+      paragraph(`– ${p}`, 10);
+    }
+  }
+
+  // Flashcards
+  if (c.flashcards.length) {
+    heading("Flashcards");
+    for (const f of c.flashcards) {
+      ensureSpace(12);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(20, 20, 30);
+      const qLines = doc.splitTextToSize(`Q: ${f.question}`, CONTENT_W);
+      for (const line of qLines) {
+        ensureSpace(6);
+        doc.text(line, MARGIN, y);
+        y += 5;
+      }
+      paragraph(`R: ${f.answer}`, 9);
+    }
+  }
+
+  // Questions de révision
+  if (c.review_questions.length) {
+    heading("Questions de révision");
+    c.review_questions.forEach((q, i) => {
+      paragraph(`${i + 1}. ${q}`, 10);
+    });
+  }
+
+  const safeTitle = (c.title || "fiche-revision").replace(/[^\w\-]+/g, "_").slice(0, 60);
+  doc.save(`${safeTitle}.pdf`);
+}
