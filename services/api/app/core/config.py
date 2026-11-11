@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
+    # Rate-limit distribué via Redis (fallback in-memory si indisponible)
+    rate_limit_use_redis: bool = True
 
     # S3 / MinIO
     s3_endpoint_url: str = "http://localhost:9000"

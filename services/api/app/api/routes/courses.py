@@ -124,7 +124,7 @@ async def upload_course_audio(
     data = await file.read(max_bytes + 1)
     if len(data) > max_bytes:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"Fichier trop volumineux (max {max_bytes // (1024 * 1024)} Mo)",
         )
     if not data:

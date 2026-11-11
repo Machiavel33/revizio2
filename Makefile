@@ -1,5 +1,5 @@
 # Revizio — commandes de développement et déploiement
-.PHONY: help install infra-up infra-down api worker web desktop test lint build docker-up docker-down security
+.PHONY: help install infra-up infra-down api worker web desktop test lint build docker-up docker-down security sbom
 
 help:
 	@echo "Revizio — cibles disponibles:"
@@ -58,3 +58,6 @@ docker-down:
 
 security:
 	./scripts/security-scan.sh
+
+sbom:
+	./scripts/generate-sbom.sh

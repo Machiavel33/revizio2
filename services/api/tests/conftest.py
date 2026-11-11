@@ -6,6 +6,8 @@ import os
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test_secret_key_for_tests_only_0123456789")
 os.environ.setdefault("BYOK_ENCRYPTION_KEY", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+# Rate-limit en mémoire pour des tests déterministes (pas de Redis requis)
+os.environ.setdefault("RATE_LIMIT_USE_REDIS", "false")
 
 import pytest
 import pytest_asyncio
@@ -44,11 +46,21 @@ async def client(session_factory):
 
     app.dependency_overrides[get_db] = override_get_db
     # Réinitialise l'état du rate-limiter (in-memory) pour isoler les tests
-    RateLimitMiddleware.reset()
+    _reset_rate_limiter()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+
+
+def _reset_rate_limiter() -> None:
+    """Vide le store mémoire du RateLimitMiddleware (parcours de la pile)."""
+    stack = getattr(app, "middleware_stack", None)
+    while stack is not None:
+        if isinstance(stack, RateLimitMiddleware):
+            stack._memory.reset()
+            return
+        stack = getattr(stack, "app", None)
 
 
 @pytest.fixture

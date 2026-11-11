@@ -106,6 +106,25 @@ et deux **hautes** (python-jose forge HS256, upload DoS). Toutes ont été corri
   vérification config prod). Code de sortie non-nul si échec.
 - **CI** : job `security` exécute le script à chaque push/PR.
 - **`make security`** : raccourci local.
+- **`scripts/generate-sbom.sh`** : génère les SBOM CycloneDX (Python + JS) dans `sbom/`.
+- **CI** : job `sbom` génère et publie les SBOM en artefacts à chaque push/PR.
+- **`make sbom`** : raccourci local.
+
+### Rate-limit distribué (Redis)
+
+Le rate-limit utilise une **fenêtre glissante atomique** implémentée en Lua côté Redis
+(`ZREMRANGEBYSCORE` + `ZCARD` + `ZADD`), compatible multi-instance. Si Redis est
+indisponible, le middleware bascule automatiquement sur un store in-memory (mono-instance)
+pour ne jamais bloquer le service. Activation via `RATE_LIMIT_USE_REDIS` (défaut `true`).
+
+### SBOM (Software Bill of Materials)
+
+Deux SBOM CycloneDX sont générés :
+- `sbom/revizio-api.cdx.json` — dépendances Python (cyclonedx-py, ~114 composants)
+- `sbom/revizio-web.cdx.json` — dépendances JS (cdxgen pnpm, ~289 composants)
+
+Ils servent à la traçabilité de la chaîne d'approvisionnement et à l'analyse de vulnérabilités
+en aval (ex. Dependency-Track, Grype).
 
 ---
 

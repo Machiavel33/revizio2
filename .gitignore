@@ -50,3 +50,6 @@ uploads/
 apps/web/test-results/
 apps/web/playwright-report/
 apps/web/.playwright/
+
+# SBOM (générés à la demande / CI)
+sbom/
