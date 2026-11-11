@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import Logo from "../components/Logo";
 
 export default function LoginPage() {
   const { login, register } = useAuth();
@@ -28,7 +29,7 @@ export default function LoginPage() {
     <div className="flex h-full items-center justify-center p-6">
       <div className="card w-full max-w-md">
         <div className="mb-6 flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-grad-primary" />
+          <Logo size={40} />
           <div>
             <h1 className="font-display text-2xl font-bold">Revizio</h1>
             <p className="text-sm text-[color:var(--text-secondary)]">

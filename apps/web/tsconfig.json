@@ -19,5 +19,6 @@
     "paths": { "@/*": ["src/*"] }
   },
   "include": ["src"],
+  "exclude": ["e2e", "playwright.config.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

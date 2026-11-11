@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import { Home, Mic, Settings, LogOut } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import type { ReactNode } from "react";
+import Logo from "./Logo";
 
 const navItems = [
   { to: "/", label: "Cours", icon: Home },
@@ -16,7 +17,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     <div className="flex h-full">
       <aside className="flex w-60 flex-col border-r border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)]">
         <div className="flex items-center gap-2 px-5 py-5">
-          <div className="h-8 w-8 rounded-md bg-grad-primary" />
+          <Logo size={32} />
           <span className="font-display text-lg font-bold tracking-tight">Revizio</span>
         </div>
 
