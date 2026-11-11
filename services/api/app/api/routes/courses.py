@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser
+from app.core.config import settings
 from app.core.database import get_db
 from app.models import Course, Job
 from app.schemas.course import (
@@ -109,12 +110,28 @@ async def upload_course_audio(
     file: Annotated[UploadFile, File()],
 ) -> Course:
     course = await _get_owned_course(course_id, user.id, db)
-    data = await file.read()
+
+    # Validation du type MIME (whitelist)
+    content_type = (file.content_type or "").lower()
+    if content_type not in settings.allowed_audio_type_list:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Type de fichier non supporté: {content_type or 'inconnu'}",
+        )
+
+    # Lecture bornée : refuse les fichiers trop volumineux (prévention DoS mémoire)
+    max_bytes = settings.max_upload_bytes
+    data = await file.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Fichier trop volumineux (max {max_bytes // (1024 * 1024)} Mo)",
+        )
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fichier vide")
 
     key = build_audio_key(user.id, course.id, file.filename or "audio.webm")
-    url = upload_audio(key, data, content_type=file.content_type or "audio/webm")
+    url = upload_audio(key, data, content_type=content_type)
     course.audio_url = url
     course.status = "transcribing"
     await db.flush()

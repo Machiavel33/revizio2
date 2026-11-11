@@ -35,12 +35,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     Les routes d'authentification ont une limite plus stricte.
     """
 
+    # Store partagé au niveau classe (permet un reset propre en tests)
+    _hits: dict[str, deque[float]] = defaultdict(deque)
+
     def __init__(self, app, limit: int = 120, window: int = 60, auth_limit: int = 20):
         super().__init__(app)
         self.limit = limit
         self.window = window
         self.auth_limit = auth_limit
-        self._hits: dict[str, deque[float]] = defaultdict(deque)
+
+    @classmethod
+    def reset(cls) -> None:
+        """Vide les compteurs (utile pour l'isolation des tests)."""
+        cls._hits.clear()
 
     def _client_key(self, request: Request) -> str:
         forwarded = request.headers.get("x-forwarded-for")

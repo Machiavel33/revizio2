@@ -13,6 +13,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base, get_db
+from app.core.middleware import RateLimitMiddleware
 from app.main import app
 
 
@@ -42,6 +43,8 @@ async def client(session_factory):
                 raise
 
     app.dependency_overrides[get_db] = override_get_db
+    # Réinitialise l'état du rate-limiter (in-memory) pour isoler les tests
+    RateLimitMiddleware.reset()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac

@@ -1,9 +1,9 @@
 """Tests de sécurité : hash de mot de passe et JWT."""
 
 import pytest
-from jose import JWTError
 
 from app.core.security import (
+    TokenError,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -28,10 +28,10 @@ def test_access_token_roundtrip():
 
 def test_refresh_token_type_mismatch():
     token = create_refresh_token("user-123")
-    with pytest.raises(JWTError):
+    with pytest.raises(TokenError):
         decode_token(token, expected_type="access")
 
 
 def test_invalid_token_raises():
-    with pytest.raises(JWTError):
+    with pytest.raises(TokenError):
         decode_token("not-a-valid-token")

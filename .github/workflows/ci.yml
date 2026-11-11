@@ -98,6 +98,32 @@ jobs:
       - name: Run E2E
         run: pnpm --filter web e2e
 
+  security:
+    name: Security scan (secrets + SCA + SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+      - name: Install backend deps + pip-audit
+        run: |
+          cd services/api
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install -e ".[dev]" pip-audit
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+      - name: Run security scan
+        run: ./scripts/security-scan.sh
+
   docker:
     name: Docker build (api + web)
     runs-on: ubuntu-latest

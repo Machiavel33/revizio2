@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     default_transcribe_provider: str = "openai"
     default_sheet_provider: str = "anthropic"
 
+    # Upload limits (sécurité : prévention DoS mémoire)
+    max_upload_bytes: int = 200 * 1024 * 1024  # 200 Mo
+    allowed_audio_types: str = (
+        "audio/webm,audio/wav,audio/x-wav,audio/mpeg,audio/ogg,audio/mp4,audio/flac"
+    )
+
+    @property
+    def allowed_audio_type_list(self) -> list[str]:
+        return [t.strip().lower() for t in self.allowed_audio_types.split(",") if t.strip()]
+
     @field_validator("cors_origins")
     @classmethod
     def _strip_origins(cls, v: str) -> str:

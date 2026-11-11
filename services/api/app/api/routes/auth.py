@@ -3,13 +3,13 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser
 from app.core.database import get_db
 from app.core.security import (
+    TokenError,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -85,7 +85,7 @@ async def refresh(
 ) -> TokenPair:
     try:
         data = decode_token(payload.refresh_token, expected_type="refresh")
-    except JWTError as exc:
+    except TokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token invalide ou expiré",

@@ -21,12 +21,11 @@ import json
 import uuid
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from jose import JWTError
 from sqlalchemy import select
 
 from app.core.crypto import decrypt_secret
 from app.core.database import AsyncSessionLocal
-from app.core.security import decode_token
+from app.core.security import TokenError, decode_token
 from app.models import User, UserApiKey
 from app.services.streaming import stream_deepgram
 
@@ -38,7 +37,7 @@ async def _authenticate(token: str) -> tuple[uuid.UUID, str] | None:
     try:
         payload = decode_token(token, expected_type="access")
         user_id = uuid.UUID(payload["sub"])
-    except (JWTError, KeyError, ValueError):
+    except (TokenError, KeyError, ValueError):
         return None
 
     async with AsyncSessionLocal() as db:
