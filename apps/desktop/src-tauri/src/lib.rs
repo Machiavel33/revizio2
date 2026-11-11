@@ -18,8 +18,11 @@ pub fn run() {
             commands::start_recording,
             commands::stop_recording,
             commands::get_level,
+            commands::set_vad_threshold,
+            commands::drain_stream_chunks,
             commands::recording_duration,
             commands::is_recording,
+            commands::calibrate_microphone,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Revizio");
