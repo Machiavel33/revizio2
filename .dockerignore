@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.pnpm-store/
+**/node_modules/
+**/dist/
+apps/desktop/
+services/
+infra/
+.git/
+*.log

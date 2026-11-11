@@ -17,5 +17,15 @@ export default defineConfig({
     target: "es2021",
     minify: "esbuild",
     sourcemap: false,
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom", "react-router-dom"],
+          pdf: ["jspdf"],
+          motion: ["framer-motion"],
+        },
+      },
+    },
   },
 });

@@ -61,6 +61,18 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
 
+    def validate_production(self) -> None:
+        """Refuse de démarrer en prod avec des secrets par défaut."""
+        if not self.is_production:
+            return
+        problems = []
+        if self.secret_key.startswith("change_me") or len(self.secret_key) < 32:
+            problems.append("SECRET_KEY doit être une valeur forte (openssl rand -hex 32)")
+        if self.byok_encryption_key.startswith("change_me"):
+            problems.append("BYOK_ENCRYPTION_KEY doit être configurée (openssl rand -base64 32)")
+        if problems:
+            raise RuntimeError("Configuration de production invalide:\n- " + "\n- ".join(problems))
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -68,3 +80,4 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+settings.validate_production()
