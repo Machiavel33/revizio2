@@ -226,15 +226,20 @@ async def _run_resilient(
                     continue
                 text = await transcribe_and_persist(chunk.pcm)
                 processed.add(end.chunk_seq)
-                # ACK APRÈS persistance (pas d'ACK prématuré)
-                await websocket.send_json(
-                    {
-                        "type": "chunk_ack",
-                        "chunk_seq": end.chunk_seq,
-                        "text": text,
-                        "sha256": chunk.sha256,
-                    }
-                )
+                # ACK APRÈS persistance (pas d'ACK prématuré).
+                # Le client peut s'être déconnecté pendant la transcription (lente sous
+                # charge) : l'audio est déjà persisté, on sort proprement sans ACK.
+                try:
+                    await websocket.send_json(
+                        {
+                            "type": "chunk_ack",
+                            "chunk_seq": end.chunk_seq,
+                            "text": text,
+                            "sha256": chunk.sha256,
+                        }
+                    )
+                except (WebSocketDisconnect, RuntimeError):
+                    return
 
 
 @router.websocket("/ws/transcribe")

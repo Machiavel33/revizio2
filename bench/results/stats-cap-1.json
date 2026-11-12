@@ -1,0 +1,15 @@
+{
+  "label": "cap-1",
+  "sessions": 1,
+  "seconds_per_session": 30.0,
+  "wall_s": 60.1,
+  "connected": 1,
+  "chunks_sent": 3,
+  "acks": 3,
+  "ack_loss": 0,
+  "ack_p50_ms": 2255.0,
+  "ack_p95_ms": 4537.6,
+  "ack_max_ms": 4537.6,
+  "errors": 0,
+  "error_samples": []
+}

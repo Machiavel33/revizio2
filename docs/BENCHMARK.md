@@ -1,0 +1,123 @@
+# Revizio — Rapport de mesures du transport résilient (RVZF v1)
+
+> Campagne de mesure bout en bout sur la stack de production réelle
+> (`revizio.darkops.fr` : API FastAPI + worker Celery + Whisper local `small`).
+> Date : 2026-11-12. Banc : `bench/bench_transport.py`.
+
+---
+
+## 1. Objectif et méthode
+
+Mesurer la **capacité réelle** du transport audio résilient (protocole RVZF v1 :
+trames numérotées → fragments de 10 s → ACK après persistance) sous charge croissante,
+et identifier le goulot d'étranglement.
+
+**Banc** : client WebSocket qui rejoue un PCM16 mono 16 kHz synthétique en temps réel
+(1 trame de 250 ms toutes les 250 ms), envoie les `chunk_end` avec SHA-256, et mesure
+la latence d'ACK par fragment. Un compte + un cours isolé par séance.
+
+**Ce qui est mesuré** : latence d'ACK (p50/p95/max), pertes d'ACK, erreurs, intégrité
+(SHA-256 vérifié côté serveur avant ACK).
+
+**Ce qui n'est PAS mesuré ici** : WER (pas de corpus de référence — le PCM est synthétique),
+qualité sur vrai cours d'amphi, durabilité matérielle (coupure de courant).
+
+**Environnement** : hôte 12 vCPU, 45 Go RAM. Whisper `small` int8, CPU, dans le processus API
+(`TRANSCRIBE_ENGINE=local`). Un seul conteneur API (`--workers 1`).
+
+---
+
+## 2. Résultats — montée en charge
+
+Séances de 30 s en temps réel, 3 fragments de 10 s chacune.
+
+| Séances | Fragments envoyés | ACK reçus | Pertes | ACK p50 | ACK p95 | ACK max | Erreurs |
+|---|---|---|---|---|---|---|---|
+| **1** | 3 | 3 | **0** | 2 255 ms | 4 538 ms | 4 538 ms | 0 |
+| **4** | 12 | 12 | **0** | 7 661 ms | 7 910 ms | 8 083 ms | 0 |
+| **8** | 24 | 24 | **0** | 21 398 ms | 27 498 ms | 27 720 ms | 0 |
+| **16** | 48 | 18 | **30** | 32 829 ms | 35 003 ms | 35 216 ms | 0 |
+
+### Lecture
+
+- **Jusqu'à 8 séances simultanées : 0 perte, 0 erreur.** L'audio est intégralement
+  persisté et acquitté. C'est la capacité fiable mesurée.
+- **À 16 séances : saturation.** 30 fragments sur 48 ne sont pas acquittés dans la
+  fenêtre de grâce (180 s) : la file de transcription ne se vide pas assez vite.
+- **La latence d'ACK croît linéairement avec la charge** (2,2 s → 7,7 s → 21 s → 33 s) :
+  signature d'un traitement **sérialisé** (un seul modèle Whisper, un seul thread de calcul).
+
+---
+
+## 3. Goulot d'étranglement identifié
+
+Pendant une charge de 8 séances, le conteneur API consomme **350 à 616 % CPU**
+(3,5 à 6 cœurs) : Whisper `small` est **CPU-bound** et sature. La transcription des
+fragments de 10 s se fait en série dans le processus API (`asyncio.to_thread` +
+singleton de modèle protégé par un verrou).
+
+**Conséquence** : le transport (WebSocket, SHA-256, écriture disque) n'est pas le
+facteur limitant — c'est le **moteur STT**. Le protocole tient ; c'est le calcul qui
+décroche.
+
+---
+
+## 4. Correctif de robustesse appliqué pendant la campagne
+
+La campagne a révélé un défaut : quand un client se déconnecte **pendant** la
+transcription d'un fragment (lente sous charge), l'envoi de l'ACK levait
+`ClientDisconnected` non géré → exception ASGI dans les logs.
+
+**Correction** (`app/api/routes/ws_transcribe.py`) : l'envoi de l'ACK est désormais
+protégé par `try/except (WebSocketDisconnect, RuntimeError)` → sortie propre. L'audio
+est déjà persisté avant l'ACK, donc **aucune perte de données**. Vérifié : 0 exception
+ASGI après le correctif.
+
+---
+
+## 5. Comparaison avec le projet `revizio` (référence)
+
+Le projet `Machiavel33/revizio` publie un rapport Lot 0 mesuré sur un VPS 4 vCPU
+avec **sherpa-onnx streaming** (STT séparé, plusieurs workers) :
+
+| Métrique | `revizio` (réf.) | `revizio2` (nous) |
+|---|---|---|
+| STT | sherpa-onnx streaming, N workers | faster-whisper `small`, 1 instance |
+| Capacité sans perte | 24 séances / 4 workers | **8 séances / 1 instance** |
+| ACK p95 à capacité | 145 ms (24 séances) | 27 498 ms (8 séances) |
+| Latence transcript | 100-265 ms | ~2-27 s (batch par fragment) |
+
+**Écart principal** : leur STT est **streaming et parallélisé** (vrai temps réel,
+latence sub-seconde) ; le nôtre est **batch par fragment de 10 s** (latence de plusieurs
+secondes, sérialisé). Leur architecture est plus performante sur le direct.
+
+**Mais** : notre transport est **identique** (même protocole RVZF v1, porté depuis chez
+eux) et **prouvé fonctionnel** (0 perte jusqu'à 8 séances). L'écart est dans le moteur
+STT, pas dans le transport.
+
+---
+
+## 6. Recommandations
+
+1. **Court terme (sans changer d'architecture)** : plafonner à **8 séances simultanées**
+   par instance API, ou passer `WHISPER_MODEL=base` (plus rapide, qualité moindre) pour
+   monter la capacité.
+2. **Moyen terme** : **découpler le STT de l'API** (service dédié, plusieurs workers) —
+   c'est exactement ce que recommande le rapport Lot 0 de `revizio`.
+3. **Long terme** : évaluer **sherpa-onnx streaming** pour le vrai temps réel
+   (latence sub-seconde, parallélisable), comme dans `revizio`.
+4. **Toujours** : garder le transport RVZF v1 (il tient) et le correctif de robustesse
+   sur l'ACK.
+
+---
+
+## 7. Reproduire
+
+```bash
+# Dans le conteneur API (a websockets/httpx/numpy)
+docker cp bench/bench_transport.py revizio-api:/tmp/
+docker exec revizio-api python /tmp/bench_transport.py \
+    --sessions 8 --seconds 30 --grace 90 --label cap-8
+```
+
+Résultats bruts : `bench/results/stats-*.json`.
