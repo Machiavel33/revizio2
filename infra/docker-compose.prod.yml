@@ -1,0 +1,109 @@
+# Revizio — stack de production complète (mono-serveur, stockage local).
+# Autonome : ne dépend pas de docker-compose.yml (pas de MinIO).
+# Usage: docker compose -f docker-compose.prod.yml up -d --build
+name: revizio
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: revizio-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-revizio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requis}
+      POSTGRES_DB: ${POSTGRES_DB:-revizio}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-revizio} -d ${POSTGRES_DB:-revizio}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: revizio-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+    container_name: revizio-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY requis}
+      BYOK_ENCRYPTION_KEY: ${BYOK_ENCRYPTION_KEY:?BYOK_ENCRYPTION_KEY requis}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-revizio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-revizio}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      STORAGE_BACKEND: local
+      LOCAL_STORAGE_DIR: /data/audio
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://revizio.darkops.fr}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes:
+      - audio_data:/data/audio
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+
+  worker:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+    container_name: revizio-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY requis}
+      BYOK_ENCRYPTION_KEY: ${BYOK_ENCRYPTION_KEY:?BYOK_ENCRYPTION_KEY requis}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-revizio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-revizio}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      STORAGE_BACKEND: local
+      LOCAL_STORAGE_DIR: /data/audio
+    volumes:
+      - audio_data:/data/audio
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=2
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    container_name: revizio-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+
+volumes:
+  pgdata:
+  redisdata:
+  audio_data:

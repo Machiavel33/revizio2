@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     s3_secret_key: str = "revizio_dev_secret"
     s3_region: str = "us-east-1"
     minio_bucket: str = "revizio-audio"
+    # Backend de stockage : "s3" (MinIO/cloud) ou "local" (filesystem mono-serveur)
+    storage_backend: str = "s3"
+    local_storage_dir: str = "/data/audio"
 
     # IA defaults
     default_transcribe_provider: str = "openai"

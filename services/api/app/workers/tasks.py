@@ -36,6 +36,12 @@ async def _get_user_key(db, user_id: uuid.UUID, provider: str) -> str | None:
 
 
 async def _download_audio(audio_url: str) -> bytes:
+    """Récupère l'audio selon le backend (local:// ou URL S3/HTTP)."""
+    from app.services import storage
+
+    if audio_url.startswith("local://"):
+        key = storage.key_from_url(audio_url)
+        return storage.read_audio(key)
     async with httpx.AsyncClient(timeout=300) as client:
         resp = await client.get(audio_url)
         resp.raise_for_status()
