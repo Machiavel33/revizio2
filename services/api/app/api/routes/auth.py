@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.security import (
     TokenError,
     create_access_token,
+    create_mfa_token,
     create_refresh_token,
     decode_token,
     hash_password,
@@ -18,6 +19,7 @@ from app.core.security import (
 )
 from app.models import User
 from app.schemas.auth import (
+    MfaRequired,
     RefreshRequest,
     TokenPair,
     UserLogin,
@@ -60,11 +62,11 @@ async def register(
     )
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post("/login", response_model=TokenPair | MfaRequired)
 async def login(
     payload: UserLogin,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> TokenPair:
+) -> TokenPair | MfaRequired:
     user = await db.scalar(select(User).where(User.email == payload.email))
     if (
         user is None
@@ -80,6 +82,12 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Compte désactivé",
         )
+    # 2FA activée : émet un challenge court au lieu des tokens finaux
+    if user.totp_enabled:
+        await audit.record(
+            db, action="user.login.mfa_challenge", actor_id=user.id, target=str(user.id)
+        )
+        return MfaRequired(mfa_token=create_mfa_token(str(user.id)))
     await audit.record(db, action="user.login", actor_id=user.id, target=str(user.id))
     return TokenPair(
         access_token=create_access_token(str(user.id)),

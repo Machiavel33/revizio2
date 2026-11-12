@@ -16,7 +16,7 @@ from app.core.config import settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 ALGORITHM = "HS256"
-TokenType = Literal["access", "refresh"]
+TokenType = Literal["access", "refresh", "mfa"]
 
 
 class TokenError(Exception):
@@ -56,6 +56,11 @@ def create_refresh_token(subject: str) -> str:
         "refresh",
         timedelta(days=settings.refresh_token_expire_days),
     )
+
+
+def create_mfa_token(subject: str) -> str:
+    """Token court (5 min) émis après login valide mais avant vérification 2FA."""
+    return _create_token(subject, "mfa", timedelta(minutes=5))
 
 
 def decode_token(token: str, expected_type: TokenType | None = None) -> dict[str, Any]:

@@ -156,11 +156,31 @@ jobs:
           path: sbom/*.cdx.json
 
   docker:
-    name: Docker build (api + web)
+    name: Docker build + sign (cosign)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # requis pour cosign keyless (OIDC)
     steps:
       - uses: actions/checkout@v4
       - name: Build API image
         run: docker build -t revizio-api:ci services/api
       - name: Build Web image
         run: docker build -t revizio-web:ci -f apps/web/Dockerfile .
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign images (keyless, sur push main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          REGISTRY: ghcr.io
+          IMAGE_PREFIX: ${{ github.repository }}
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          for name in api web; do
+            src="revizio-${name}:ci"
+            dst="${REGISTRY}/${IMAGE_PREFIX}-${name}:${GITHUB_SHA}"
+            docker tag "$src" "$dst"
+            docker push "$dst"
+            cosign sign --yes "$dst"
+          done

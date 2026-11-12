@@ -34,10 +34,11 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(
-    RateLimitMiddleware,
-    redis_url=settings.redis_url if settings.rate_limit_use_redis else None,
-)
+if settings.rate_limit_enabled:
+    app.add_middleware(
+        RateLimitMiddleware,
+        redis_url=settings.redis_url if settings.rate_limit_use_redis else None,
+    )
 
 app.include_router(api_router, prefix="/api")
 

@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/2"
     # Rate-limit distribué via Redis (fallback in-memory si indisponible)
     rate_limit_use_redis: bool = True
+    # Désactivation totale du rate-limit (tests de charge uniquement)
+    rate_limit_enabled: bool = True
 
     # S3 / MinIO
     s3_endpoint_url: str = "http://localhost:9000"

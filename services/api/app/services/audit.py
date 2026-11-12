@@ -12,7 +12,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AuditLog
@@ -63,13 +63,27 @@ async def record(
     target: str | None = None,
     metadata: dict | None = None,
 ) -> AuditLog:
-    """Ajoute une entrée d'audit chaînée. À appeler dans la même transaction."""
+    """Ajoute une entrée d'audit chaînée. À appeler dans la même transaction.
+
+    Le `seq` est obtenu via une séquence PostgreSQL atomique (nextval) pour
+    éviter les collisions sous concurrence. Le prev_hash est lu sous verrou
+    (SELECT ... FOR UPDATE) pour garantir la cohérence de la chaîne.
+    """
     metadata = metadata or {}
 
-    # Dernière entrée (ordre strict par seq)
-    last = await db.scalar(select(AuditLog).order_by(AuditLog.seq.desc()).limit(1))
+    # Verrouille la dernière entrée pour sérialiser l'append (évite la course).
+    # with_for_update() est ignoré par SQLite (tests) mais actif sur PostgreSQL.
+    last = await db.scalar(
+        select(AuditLog).order_by(AuditLog.seq.desc()).limit(1).with_for_update()
+    )
     prev_hash = last.entry_hash if last else ""
-    seq = (last.seq + 1) if last else 1
+
+    # seq : séquence atomique PostgreSQL si disponible, sinon max()+1 (SQLite/tests)
+    dialect = db.bind.dialect.name if db.bind is not None else ""
+    if dialect == "postgresql":
+        seq = int(await db.scalar(text("SELECT nextval('audit_logs_seq')")))
+    else:
+        seq = (last.seq + 1) if last else 1
     created_at = datetime.now(UTC)
 
     entry_hash = _compute_hash(

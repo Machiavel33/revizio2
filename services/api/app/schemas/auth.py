@@ -27,6 +27,13 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class MfaRequired(BaseModel):
+    """Réponse de login quand la 2FA est activée : challenge à compléter."""
+
+    mfa_required: bool = True
+    mfa_token: str
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

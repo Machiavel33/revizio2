@@ -114,6 +114,21 @@ export const api = {
   getCourse: (id: string) => request<CourseDetail>(`/api/courses/${id}`),
   deleteCourse: (id: string) => request<void>(`/api/courses/${id}`, { method: "DELETE" }),
 
+  // 2FA
+  totpStatus: () => request<{ enabled: boolean }>("/api/2fa/status"),
+  totpSetup: () =>
+    request<{ secret: string; provisioning_uri: string }>("/api/2fa/setup", { method: "POST" }),
+  totpEnable: (code: string) =>
+    request<{ enabled: boolean; backup_codes: string[] }>("/api/2fa/enable", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+  totpDisable: (code: string) =>
+    request<{ enabled: boolean }>("/api/2fa/disable", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+
   // Admin
   adminStats: () => request<AdminStats>("/api/admin/stats"),
   adminUsers: () => request<AdminUser[]>("/api/admin/users"),

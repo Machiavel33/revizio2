@@ -40,6 +40,10 @@ class User(Base):
     oauth_provider: Mapped[str | None] = mapped_column(String(30), nullable=True)
     oauth_sub: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # 2FA TOTP (facultatif) : secret chiffré AES-256-GCM, backup codes hachés
+    totp_secret: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    backup_codes: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     api_keys: Mapped[list["UserApiKey"]] = relationship(

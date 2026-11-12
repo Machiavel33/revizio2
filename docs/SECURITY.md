@@ -158,6 +158,33 @@ en aval (ex. Dependency-Track, Grype).
 - API déclarative inchangée (BrowserRouter/Routes/Route/Link/NavLink/useNavigate/useParams).
 - **pnpm audit : 0 vulnérabilité** (toutes sévérités).
 
+### 2FA admin TOTP (facultatif, opt-in)
+
+- Enrôlement : `POST /api/2fa/setup` (secret + URI otpauth), `POST /api/2fa/enable` (confirme
+  avec un code, retourne 8 backup codes à usage unique).
+- Login : si 2FA activée, `/api/auth/login` renvoie un `mfa_token` court (5 min) au lieu des
+  tokens ; `POST /api/2fa/verify` (code TOTP ou backup code) émet les tokens finaux.
+- Secret TOTP chiffré AES-256-GCM au repos ; backup codes hachés bcrypt.
+- Désactivation : `POST /api/2fa/disable` (code TOTP ou backup code requis).
+- UI : section dédiée dans les réglages (secret, activation, backup codes, désactivation).
+
+### Tests de charge (k6)
+
+- `load/load-test.js` : scénarios health, auth (register+login), courses (CRUD), rate-limit.
+- Thresholds : p95 < 2s (réaliste car bcrypt CPU-bound), taux d'erreur < 5%.
+- **A révélé et fait corriger une race condition** sur `audit_logs.seq` (max()+1 concurrent →
+  séquence PostgreSQL atomique `nextval` + `SELECT ... FOR UPDATE`).
+- Résultat mesuré : 100% checks, 0% erreurs, p95 ≈ 1.5s (bcrypt-bound).
+- `make load` / `k6 run load/load-test.js`.
+
+### Signature d'artefacts (cosign keyless)
+
+- CI : build des images Docker, push vers GHCR (sur `main`), signature **keyless** via OIDC
+  GitHub Actions (`cosign sign --yes`). Aucune clé privée à gérer.
+- Vérification : `scripts/verify-image.sh <image>` (contrôle identité OIDC + issuer).
+- `make verify-image IMAGE=...`.
+- Traçabilité supply-chain de bout en bout (SBOM + signature).
+
 ---
 
 ## 6. Recommandations futures
@@ -170,10 +197,14 @@ en aval (ex. Dependency-Track, Grype).
 5. ✅ Migration react-router 7.x (0 vulnérabilité JS).
 6. ✅ SBOM CycloneDX (Python + JS).
 
-**Restantes :**
-7. **2FA admin** : TOTP pour les comptes administrateurs.
-8. **Tests de charge** : valider les limites de rate-limit et d'upload sous charge réelle.
-9. **Signature des artefacts** : cosign/Sigstore pour les images Docker et binaires Tauri.
+7. ✅ 2FA TOTP (facultatif, opt-in).
+8. ✅ Tests de charge k6 (a révélé + corrigé une race condition audit).
+9. ✅ Signature d'artefacts cosign keyless (CI + vérification).
+
+**Restantes (nice-to-have) :**
+10. **Signature des binaires Tauri** (au-delà des images Docker).
+11. **Tests de charge prolongés** (soak test 1h+) et tuning pool DB.
+12. **WAF / protection DDoS** en amont (Cloudflare, etc.).
 
 ---
 

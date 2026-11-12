@@ -18,6 +18,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Séquence atomique pour le seq (évite les collisions sous concurrence)
+    op.execute("CREATE SEQUENCE IF NOT EXISTS audit_logs_seq")
     op.create_table(
         "audit_logs",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -44,3 +46,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("audit_logs")
+    op.execute("DROP SEQUENCE IF EXISTS audit_logs_seq")
