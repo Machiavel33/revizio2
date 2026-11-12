@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # Backend de stockage : "s3" (MinIO/cloud) ou "local" (filesystem mono-serveur)
     storage_backend: str = "s3"
     local_storage_dir: str = "/data/audio"
+    # Répertoire des binaires de l'app desktop (installeurs)
+    downloads_dir: str = "/data/downloads"
 
     # IA defaults
     default_transcribe_provider: str = "openai"

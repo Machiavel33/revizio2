@@ -42,10 +42,18 @@ async def register(
             status_code=status.HTTP_409_CONFLICT,
             detail="Un compte existe déjà avec cet email",
         )
+    # Si une clé plateforme est configurée, le nouvel utilisateur démarre en
+    # mode "platform" (zéro config pour lui). Sinon BYOK.
+    from app.models import PlatformKey
+
+    has_platform = await db.scalar(
+        select(PlatformKey.id).where(PlatformKey.is_active.is_(True)).limit(1)
+    )
     user = User(
         email=payload.email,
         password_hash=hash_password(payload.password),
         display_name=payload.display_name or payload.email.split("@")[0],
+        key_mode="platform" if has_platform else "byok",
     )
     db.add(user)
     await db.flush()

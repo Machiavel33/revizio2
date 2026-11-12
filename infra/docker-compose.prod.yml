@@ -58,11 +58,13 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       STORAGE_BACKEND: local
       LOCAL_STORAGE_DIR: /data/audio
+      DOWNLOADS_DIR: /data/downloads
       CORS_ORIGINS: ${CORS_ORIGINS:-https://revizio.darkops.fr}
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     volumes:
       - audio_data:/data/audio
+      - ../downloads:/data/downloads:ro
     command: >
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
 

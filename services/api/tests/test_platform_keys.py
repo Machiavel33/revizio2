@@ -68,17 +68,15 @@ async def test_user_key_mode_switch(client, session_factory):
 
     user = await _register(client, "user@example.com")
 
-    # Par défaut byok
+    # Une clé plateforme existe -> défaut "platform" pour les nouveaux users
     status = await client.get("/api/api-keys/key-mode", headers=user)
-    assert status.json()["key_mode"] == "byok"
+    assert status.json()["key_mode"] == "platform"
     assert "openai" in status.json()["platform_available"]
 
-    # Bascule vers platform
-    switched = await client.put(
-        "/api/api-keys/key-mode", json={"key_mode": "platform"}, headers=user
-    )
+    # Bascule vers byok
+    switched = await client.put("/api/api-keys/key-mode", json={"key_mode": "byok"}, headers=user)
     assert switched.status_code == 200
-    assert switched.json()["key_mode"] == "platform"
+    assert switched.json()["key_mode"] == "byok"
 
     # Mode invalide refusé
     bad = await client.put("/api/api-keys/key-mode", json={"key_mode": "xxx"}, headers=user)
@@ -116,4 +114,5 @@ async def test_admin_users_show_key_info(client, session_factory):
     byok_user = next(u for u in users.json() if u["email"] == "byokuser@example.com")
     assert "openai" in byok_user["byok_providers"]
     assert "anthropic" in byok_user["platform_providers"]
-    assert byok_user["key_mode"] == "byok"
+    # Défaut platform (clé plateforme dispo), mais a une clé BYOK openai
+    assert byok_user["key_mode"] == "platform"

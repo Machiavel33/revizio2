@@ -7,6 +7,7 @@ import type {
   ApiKey,
   Course,
   CourseDetail,
+  DownloadItem,
   KeyMode,
   OnlineInfo,
   PlatformKey,
@@ -162,6 +163,9 @@ export const api = {
     request<void>(`/api/admin/platform-keys/${id}`, { method: "DELETE" }),
   adminSystem: () => request<SystemInfo>("/api/admin/system"),
   adminOnline: () => request<OnlineInfo>("/api/admin/online"),
+
+  // Downloads (public)
+  listDownloads: () => request<DownloadItem[]>("/api/downloads"),
 };
 
 export { API_BASE };

@@ -161,3 +161,13 @@ export interface OnlineInfo {
   count: number;
   users: OnlineUser[];
 }
+
+// --- Téléchargements desktop ---
+export interface DownloadItem {
+  filename: string;
+  size: number;
+  os: string;
+  arch: string;
+  version: string;
+  url: string;
+}

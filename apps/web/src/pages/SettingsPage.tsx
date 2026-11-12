@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import type { ApiKey } from "../lib/types";
 import TwoFactorSection from "../components/TwoFactorSection";
 import KeyModeSection from "../components/KeyModeSection";
+import ApiKeyGuide from "../components/ApiKeyGuide";
 
 const PROVIDERS = [
   { id: "openai", label: "OpenAI", hint: "sk-…" },
@@ -143,6 +144,7 @@ export default function SettingsPage() {
       </div>
 
       <KeyModeSection />
+      <ApiKeyGuide />
       <TwoFactorSection />
     </div>
   );
