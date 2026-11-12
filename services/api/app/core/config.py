@@ -82,12 +82,6 @@ class Settings(BaseSettings):
     whisper_device: str = "cpu"  # cpu|cuda
     whisper_compute_type: str = "int8"  # int8|float16|float32
 
-    # --- Génération de fiche locale (Ollama, open source) ---
-    # Moteur : "auto" (ollama si dispo, sinon cloud), "ollama", "cloud"
-    sheet_engine: str = "auto"
-    ollama_url: str = "http://host.docker.internal:11434"
-    ollama_model: str = "qwen2.5:7b"
-
     # Upload limits (sécurité : prévention DoS mémoire)
     max_upload_bytes: int = 200 * 1024 * 1024  # 200 Mo
     allowed_audio_types: str = (

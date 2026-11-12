@@ -147,40 +147,12 @@ async def generate_sheet_openai(
     return {"content": _parse_json(text), "model": model}
 
 
-async def generate_sheet_ollama(
-    transcript: str,
-    language: str = "fr",
-    model: str | None = None,
-) -> dict:
-    """Génère une fiche via Ollama (LLM local, gratuit)."""
-    from app.core.config import settings
-
-    model = model or settings.ollama_model
-    body = {
-        "model": model,
-        "stream": False,
-        "format": "json",
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": _build_user_prompt(transcript, language)},
-        ],
-    }
-    async with httpx.AsyncClient(timeout=600) as client:
-        resp = await client.post(f"{settings.ollama_url}/api/chat", json=body)
-        resp.raise_for_status()
-        payload = resp.json()
-    text = payload["message"]["content"]
-    return {"content": _parse_json(text), "model": model}
-
-
 async def generate_sheet(
     transcript: str,
     provider: str,
     api_key: str,
     language: str = "fr",
 ) -> dict:
-    if provider == "ollama":
-        return await generate_sheet_ollama(transcript, language=language)
     if provider == "anthropic":
         return await generate_sheet_anthropic(transcript, api_key, language=language)
     if provider == "openai":

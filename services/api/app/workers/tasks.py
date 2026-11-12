@@ -193,43 +193,17 @@ async def _run_generate_sheet(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
             if transcript is None or not transcript.full_text:
                 raise ValueError("Transcription absente ou vide")
 
-            # Choix du moteur : ollama (local, gratuit) ou cloud (anthropic/openai)
-            from app.core.config import settings as _settings
+            provider = "anthropic"
+            api_key, key_source = await _resolve_key(db, course.user_id, "anthropic")
+            if api_key is None:
+                provider = "openai"
+                api_key, key_source = await _resolve_key(db, course.user_id, "openai")
+            if api_key is None:
+                raise ValueError("Aucune clé API de génération configurée")
 
-            engine = _settings.sheet_engine
-            result = None
-            provider = "ollama"
-            key_source = "local"
-
-            if engine in ("auto", "ollama"):
-                try:
-                    result = await generate_sheet(
-                        transcript.full_text,
-                        provider="ollama",
-                        api_key="",
-                        language=course.language,
-                    )
-                    provider = "ollama"
-                    key_source = "local"
-                except Exception as exc:  # noqa: BLE001
-                    if engine == "ollama":
-                        raise
-                    log.warning("Ollama indisponible, fallback cloud: %s", exc)
-
-            if result is None:
-                provider = "anthropic"
-                api_key, key_source = await _resolve_key(db, course.user_id, "anthropic")
-                if api_key is None:
-                    provider = "openai"
-                    api_key, key_source = await _resolve_key(db, course.user_id, "openai")
-                if api_key is None:
-                    raise ValueError("Aucune clé API de génération configurée")
-                result = await generate_sheet(
-                    transcript.full_text,
-                    provider=provider,
-                    api_key=api_key,
-                    language=course.language,
-                )
+            result = await generate_sheet(
+                transcript.full_text, provider=provider, api_key=api_key, language=course.language
+            )
 
             sheet = await db.scalar(select(StudySheet).where(StudySheet.course_id == course_id))
             if sheet is None:
