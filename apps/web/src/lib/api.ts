@@ -11,7 +11,9 @@ import type {
   User,
 } from "./types";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+// En production, l'API est servie en relatif (/api/...) via le reverse proxy nginx
+// sur le même domaine. En dev, VITE_API_URL pointe vers le backend local.
+const API_BASE = import.meta.env.VITE_API_URL ?? "";
 const ACCESS_KEY = "revizio.access";
 const REFRESH_KEY = "revizio.refresh";
 
