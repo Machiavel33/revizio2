@@ -7,17 +7,27 @@ import {
   Loader2,
   ShieldCheck,
   ShieldOff,
+  KeyRound,
+  Trash2,
+  Plus,
 } from "lucide-react";
 import { api } from "../../lib/api";
-import type { AdminJob, AdminStats, AdminUser } from "../../lib/types";
+import type { AdminJob, AdminStats, AdminUser, PlatformKey } from "../../lib/types";
 
-type Tab = "stats" | "users" | "jobs";
+type Tab = "stats" | "users" | "platform" | "jobs";
+
+const PROVIDERS = [
+  { id: "openai", label: "OpenAI" },
+  { id: "anthropic", label: "Anthropic" },
+  { id: "deepgram", label: "Deepgram" },
+];
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("stats");
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [jobs, setJobs] = useState<AdminJob[]>([]);
+  const [platformKeys, setPlatformKeys] = useState<PlatformKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,14 +35,16 @@ export default function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [s, u, j] = await Promise.all([
+      const [s, u, j, pk] = await Promise.all([
         api.adminStats(),
         api.adminUsers(),
         api.adminJobs(),
+        api.adminPlatformKeys(),
       ]);
       setStats(s);
       setUsers(u);
       setJobs(j);
+      setPlatformKeys(pk);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -44,8 +56,8 @@ export default function AdminPage() {
     void load();
   }, []);
 
-  async function toggleActive(u: AdminUser) {
-    const updated = await api.adminSetUserActive(u.id, !u.is_active);
+  async function updateUser(u: AdminUser, patch: { is_active?: boolean; key_mode?: string }) {
+    const updated = await api.adminUpdateUser(u.id, patch);
     setUsers((list) => list.map((x) => (x.id === u.id ? updated : x)));
   }
 
@@ -56,8 +68,8 @@ export default function AdminPage() {
         <h1 className="font-display text-3xl font-bold">Administration</h1>
       </div>
 
-      <div className="mb-6 flex gap-2">
-        {(["stats", "users", "jobs"] as Tab[]).map((t) => (
+      <div className="mb-6 flex flex-wrap gap-2">
+        {(["stats", "users", "platform", "jobs"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -67,7 +79,13 @@ export default function AdminPage() {
                 : "text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-elevated)]"
             }`}
           >
-            {t === "stats" ? "Statistiques" : t === "users" ? "Utilisateurs" : "Jobs"}
+            {t === "stats"
+              ? "Statistiques"
+              : t === "users"
+                ? "Utilisateurs"
+                : t === "platform"
+                  ? "Clés plateforme"
+                  : "Jobs"}
           </button>
         ))}
       </div>
@@ -85,7 +103,9 @@ export default function AdminPage() {
       ) : tab === "stats" && stats ? (
         <StatsTab stats={stats} />
       ) : tab === "users" ? (
-        <UsersTab users={users} onToggle={toggleActive} />
+        <UsersTab users={users} onUpdate={updateUser} />
+      ) : tab === "platform" ? (
+        <PlatformKeysTab keys={platformKeys} onChange={load} />
       ) : (
         <JobsTab jobs={jobs} />
       )}
@@ -132,12 +152,29 @@ function StatsTab({ stats }: { stats: AdminStats }) {
   );
 }
 
+function ProviderBadges({ providers, color }: { providers: string[]; color: string }) {
+  if (providers.length === 0) return <span className="text-xs text-[color:var(--text-muted)]">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {providers.map((p) => (
+        <span
+          key={p}
+          className="rounded px-1.5 py-0.5 text-[10px] font-medium uppercase"
+          style={{ background: `${color}22`, color }}
+        >
+          {p}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function UsersTab({
   users,
-  onToggle,
+  onUpdate,
 }: {
   users: AdminUser[];
-  onToggle: (u: AdminUser) => void;
+  onUpdate: (u: AdminUser, patch: { is_active?: boolean; key_mode?: string }) => void;
 }) {
   return (
     <div className="card overflow-x-auto p-0">
@@ -145,9 +182,10 @@ function UsersTab({
         <thead>
           <tr className="border-b border-[color:var(--border-subtle)] text-left text-xs uppercase tracking-wider text-[color:var(--text-muted)]">
             <th className="px-4 py-3">Email</th>
-            <th className="px-4 py-3">Nom</th>
             <th className="px-4 py-3">Rôle</th>
             <th className="px-4 py-3">Cours</th>
+            <th className="px-4 py-3">Mode clé IA</th>
+            <th className="px-4 py-3">Clés perso (BYOK)</th>
             <th className="px-4 py-3">Statut</th>
             <th className="px-4 py-3"></th>
           </tr>
@@ -155,8 +193,10 @@ function UsersTab({
         <tbody>
           {users.map((u) => (
             <tr key={u.id} className="border-b border-[color:var(--border-subtle)]/50">
-              <td className="px-4 py-3 font-mono text-xs">{u.email}</td>
-              <td className="px-4 py-3">{u.display_name}</td>
+              <td className="px-4 py-3">
+                <div className="font-mono text-xs">{u.email}</div>
+                <div className="text-xs text-[color:var(--text-muted)]">{u.display_name}</div>
+              </td>
               <td className="px-4 py-3">
                 <span
                   className={`rounded px-2 py-0.5 text-xs ${
@@ -170,6 +210,19 @@ function UsersTab({
               </td>
               <td className="px-4 py-3">{u.course_count}</td>
               <td className="px-4 py-3">
+                <select
+                  value={u.key_mode}
+                  onChange={(e) => onUpdate(u, { key_mode: e.target.value })}
+                  className="rounded-md bg-[color:var(--bg-inset)] px-2 py-1 text-xs"
+                >
+                  <option value="byok">BYOK (sa clé)</option>
+                  <option value="platform">Plateforme</option>
+                </select>
+              </td>
+              <td className="px-4 py-3">
+                <ProviderBadges providers={u.byok_providers} color="var(--accent-primary)" />
+              </td>
+              <td className="px-4 py-3">
                 <span
                   className={
                     u.is_active
@@ -182,7 +235,7 @@ function UsersTab({
               </td>
               <td className="px-4 py-3 text-right">
                 <button
-                  onClick={() => onToggle(u)}
+                  onClick={() => onUpdate(u, { is_active: !u.is_active })}
                   className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:text-[color:var(--accent-primary)]"
                   aria-label="Basculer le statut"
                 >
@@ -193,6 +246,102 @@ function UsersTab({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function PlatformKeysTab({ keys, onChange }: { keys: PlatformKey[]; onChange: () => void }) {
+  const [provider, setProvider] = useState("openai");
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function add() {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.adminCreatePlatformKey(provider, value);
+      setValue("");
+      onChange();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: string) {
+    await api.adminDeletePlatformKey(id);
+    onChange();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-3">
+        <div className="flex items-center gap-2 text-[color:var(--accent-primary)]">
+          <KeyRound size={18} />
+          <h2 className="font-display text-lg font-semibold">Clés API de la plateforme</h2>
+        </div>
+        <p className="text-sm text-[color:var(--text-secondary)]">
+          Ces clés sont utilisées par les utilisateurs en mode « Plateforme ». Chiffrées
+          AES-256-GCM, jamais affichées en clair.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-[1fr_2fr_auto]">
+          <select className="input" value={provider} onChange={(e) => setProvider(e.target.value)}>
+            {PROVIDERS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <input
+            className="input"
+            type="password"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="clé API"
+          />
+          <button onClick={add} disabled={busy || !value} className="btn-primary">
+            <Plus size={16} />
+            Ajouter
+          </button>
+        </div>
+        {error && (
+          <p className="rounded-md bg-[color:var(--accent-danger)]/10 px-3 py-2 text-sm text-[color:var(--accent-danger)]">
+            {error}
+          </p>
+        )}
+      </div>
+
+      <div className="card space-y-2">
+        {keys.length === 0 ? (
+          <p className="text-sm text-[color:var(--text-muted)]">Aucune clé plateforme configurée.</p>
+        ) : (
+          keys.map((k) => (
+            <div
+              key={k.id}
+              className="flex items-center justify-between rounded-md bg-[color:var(--bg-inset)] px-3 py-2.5"
+            >
+              <div className="flex items-center gap-3">
+                <span className="rounded bg-[color:var(--bg-elevated)] px-2 py-0.5 text-xs font-medium uppercase text-[color:var(--accent-primary)]">
+                  {k.provider}
+                </span>
+                <span className="font-mono text-sm text-[color:var(--text-secondary)]">
+                  {k.key_hint}
+                </span>
+                <span className="text-xs text-[color:var(--accent-success)]">active</span>
+              </div>
+              <button
+                onClick={() => remove(k.id)}
+                className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:text-[color:var(--accent-danger)]"
+                aria-label="Supprimer"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

@@ -23,3 +23,12 @@ class ApiKeyOut(BaseModel):
     key_hint: str
     is_default: bool
     created_at: datetime
+
+
+class KeyModeOut(BaseModel):
+    key_mode: str
+    platform_available: list[str] = []
+
+
+class KeyModeUpdate(BaseModel):
+    key_mode: str

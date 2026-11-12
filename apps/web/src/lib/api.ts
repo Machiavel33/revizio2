@@ -7,6 +7,8 @@ import type {
   ApiKey,
   Course,
   CourseDetail,
+  KeyMode,
+  PlatformKey,
   TokenPair,
   User,
 } from "./types";
@@ -131,15 +133,31 @@ export const api = {
       body: JSON.stringify({ code }),
     }),
 
+  // Key mode (user)
+  getKeyMode: () => request<KeyMode>("/api/api-keys/key-mode"),
+  setKeyMode: (key_mode: string) =>
+    request<KeyMode>("/api/api-keys/key-mode", {
+      method: "PUT",
+      body: JSON.stringify({ key_mode }),
+    }),
+
   // Admin
   adminStats: () => request<AdminStats>("/api/admin/stats"),
   adminUsers: () => request<AdminUser[]>("/api/admin/users"),
-  adminSetUserActive: (id: string, is_active: boolean) =>
+  adminUpdateUser: (id: string, patch: { is_active?: boolean; key_mode?: string }) =>
     request<AdminUser>(`/api/admin/users/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ is_active }),
+      body: JSON.stringify(patch),
     }),
   adminJobs: () => request<AdminJob[]>("/api/admin/jobs"),
+  adminPlatformKeys: () => request<PlatformKey[]>("/api/admin/platform-keys"),
+  adminCreatePlatformKey: (provider: string, api_key: string) =>
+    request<PlatformKey>("/api/admin/platform-keys", {
+      method: "POST",
+      body: JSON.stringify({ provider, api_key }),
+    }),
+  adminDeletePlatformKey: (id: string) =>
+    request<void>(`/api/admin/platform-keys/${id}`, { method: "DELETE" }),
 };
 
 export { API_BASE };

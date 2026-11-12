@@ -8,8 +8,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AdminUser
+from app.core.crypto import encrypt_secret, mask_secret
 from app.core.database import get_db
-from app.models import AuditLog, Course, Job, User
+from app.models import AuditLog, Course, Job, PlatformKey, User, UserApiKey
 from app.schemas.admin import (
     AdminJobOut,
     AdminStats,
@@ -17,6 +18,8 @@ from app.schemas.admin import (
     AdminUserUpdate,
     AuditLogOut,
     AuditVerifyOut,
+    PlatformKeyCreate,
+    PlatformKeyOut,
 )
 from app.services import audit
 
@@ -47,6 +50,11 @@ async def stats(
     )
 
 
+async def _platform_providers(db: AsyncSession) -> list[str]:
+    rows = await db.scalars(select(PlatformKey.provider).where(PlatformKey.is_active.is_(True)))
+    return list(rows)
+
+
 @router.get("/users", response_model=list[AdminUserOut])
 async def list_users(
     _admin: AdminUser,
@@ -58,10 +66,19 @@ async def list_users(
         .group_by(User.id)
         .order_by(User.created_at.desc())
     )
+    platform = await _platform_providers(db)
+    # Providers BYOK par utilisateur
+    byok_rows = await db.execute(select(UserApiKey.user_id, UserApiKey.provider))
+    byok_map: dict[uuid.UUID, list[str]] = {}
+    for uid, provider in byok_rows.all():
+        byok_map.setdefault(uid, []).append(provider)
+
     result = []
     for user, course_count in rows.all():
         out = AdminUserOut.model_validate(user)
         out.course_count = int(course_count)
+        out.byok_providers = sorted(byok_map.get(user.id, []))
+        out.platform_providers = platform
         result.append(out)
     return result
 
@@ -76,22 +93,97 @@ async def update_user(
     user = await db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable")
-    user.is_active = payload.is_active
+    changes: dict = {}
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
+        changes["is_active"] = payload.is_active
+    if payload.key_mode is not None:
+        if payload.key_mode not in ("byok", "platform"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="key_mode doit être 'byok' ou 'platform'",
+            )
+        user.key_mode = payload.key_mode
+        changes["key_mode"] = payload.key_mode
     await db.flush()
     await audit.record(
         db,
         action="admin.user.update",
         actor_id=_admin.id,
         target=str(user_id),
-        metadata={"is_active": payload.is_active},
+        metadata=changes,
     )
     course_count = int(
         await db.scalar(select(func.count()).select_from(Course).where(Course.user_id == user.id))
         or 0
     )
+    byok = list(await db.scalars(select(UserApiKey.provider).where(UserApiKey.user_id == user.id)))
     out = AdminUserOut.model_validate(user)
     out.course_count = course_count
+    out.byok_providers = sorted(byok)
+    out.platform_providers = await _platform_providers(db)
     return out
+
+
+# --- Clés plateforme (globales) ---
+
+
+@router.get("/platform-keys", response_model=list[PlatformKeyOut])
+async def list_platform_keys(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[PlatformKey]:
+    return list(await db.scalars(select(PlatformKey).order_by(PlatformKey.provider)))
+
+
+@router.post("/platform-keys", response_model=PlatformKeyOut, status_code=status.HTTP_201_CREATED)
+async def create_platform_key(
+    payload: PlatformKeyCreate,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PlatformKey:
+    existing = await db.scalar(select(PlatformKey).where(PlatformKey.provider == payload.provider))
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Une clé plateforme {payload.provider} existe déjà",
+        )
+    key = PlatformKey(
+        provider=payload.provider,
+        encrypted_key=encrypt_secret(payload.api_key),
+        key_hint=mask_secret(payload.api_key),
+        is_active=True,
+    )
+    db.add(key)
+    await db.flush()
+    await audit.record(
+        db,
+        action="admin.platform_key.create",
+        actor_id=_admin.id,
+        target=str(key.id),
+        metadata={"provider": payload.provider},
+    )
+    return key
+
+
+@router.delete("/platform-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_platform_key(
+    key_id: uuid.UUID,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    key = await db.get(PlatformKey, key_id)
+    if key is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clé introuvable")
+    provider = key.provider
+    await db.delete(key)
+    await audit.record(
+        db,
+        action="admin.platform_key.delete",
+        actor_id=_admin.id,
+        target=str(key_id),
+        metadata={"provider": provider},
+    )
 
 
 @router.get("/jobs", response_model=list[AdminJobOut])

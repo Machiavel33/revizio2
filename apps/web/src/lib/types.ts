@@ -98,6 +98,21 @@ export interface ApiKey {
 // --- Admin ---
 export interface AdminUser extends User {
   course_count: number;
+  key_mode: string;
+  byok_providers: string[];
+  platform_providers: string[];
+}
+export interface PlatformKey {
+  id: string;
+  provider: string;
+  key_hint: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+export interface KeyMode {
+  key_mode: string;
+  platform_available: string[];
 }
 export interface AdminStats {
   total_users: number;

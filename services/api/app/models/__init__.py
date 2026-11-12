@@ -5,6 +5,7 @@ from app.models.models import (
     Course,
     Flashcard,
     Job,
+    PlatformKey,
     StudySheet,
     Transcript,
     UsageLog,
@@ -15,6 +16,7 @@ from app.models.models import (
 __all__ = [
     "User",
     "UserApiKey",
+    "PlatformKey",
     "Course",
     "Transcript",
     "StudySheet",

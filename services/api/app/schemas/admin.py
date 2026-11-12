@@ -14,12 +14,34 @@ class AdminUserOut(BaseModel):
     display_name: str
     role: str
     is_active: bool
+    key_mode: str = "byok"
     created_at: datetime
     course_count: int = 0
+    # Providers pour lesquels l'utilisateur a une clé perso (BYOK)
+    byok_providers: list[str] = []
+    # Providers pour lesquels une clé plateforme existe (utilisable en mode platform)
+    platform_providers: list[str] = []
 
 
 class AdminUserUpdate(BaseModel):
+    is_active: bool | None = None
+    key_mode: str | None = None
+
+
+class PlatformKeyCreate(BaseModel):
+    provider: str
+    api_key: str
+
+
+class PlatformKeyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    provider: str
+    key_hint: str
     is_active: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 class AdminStats(BaseModel):

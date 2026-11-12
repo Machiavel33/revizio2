@@ -10,11 +10,53 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser
 from app.core.crypto import encrypt_secret, mask_secret
 from app.core.database import get_db
-from app.models import UserApiKey
-from app.schemas.api_key import ApiKeyCreate, ApiKeyOut
+from app.models import PlatformKey, UserApiKey
+from app.schemas.api_key import ApiKeyCreate, ApiKeyOut, KeyModeOut, KeyModeUpdate
 from app.services import audit
 
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])
+
+
+@router.get("/key-mode", response_model=KeyModeOut)
+async def get_key_mode(
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> KeyModeOut:
+    platform = list(
+        await db.scalars(select(PlatformKey.provider).where(PlatformKey.is_active.is_(True)))
+    )
+    return KeyModeOut(key_mode=user.key_mode, platform_available=platform)
+
+
+@router.put("/key-mode", response_model=KeyModeOut)
+async def set_key_mode(
+    payload: KeyModeUpdate,
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> KeyModeOut:
+    if payload.key_mode not in ("byok", "platform"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="key_mode doit être 'byok' ou 'platform'",
+        )
+    platform = list(
+        await db.scalars(select(PlatformKey.provider).where(PlatformKey.is_active.is_(True)))
+    )
+    if payload.key_mode == "platform" and not platform:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Aucune clé plateforme disponible",
+        )
+    user.key_mode = payload.key_mode
+    await db.flush()
+    await audit.record(
+        db,
+        action="user.key_mode.update",
+        actor_id=user.id,
+        target=str(user.id),
+        metadata={"key_mode": payload.key_mode},
+    )
+    return KeyModeOut(key_mode=user.key_mode, platform_available=platform)
 
 
 @router.get("", response_model=list[ApiKeyOut])

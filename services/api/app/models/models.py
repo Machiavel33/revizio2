@@ -44,6 +44,8 @@ class User(Base):
     totp_secret: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     backup_codes: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # Mode de clé IA : "byok" (clé perso) ou "platform" (clé fournie par la plateforme)
+    key_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="byok")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     api_keys: Mapped[list["UserApiKey"]] = relationship(
@@ -69,6 +71,27 @@ class UserApiKey(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     user: Mapped["User"] = relationship(back_populates="api_keys")
+
+
+class PlatformKey(Base):
+    """Clés API globales fournies par la plateforme (admin).
+
+    Un utilisateur en mode "platform" utilise ces clés au lieu des siennes.
+    Chiffrées AES-256-GCM, une par provider.
+    """
+
+    __tablename__ = "platform_keys"
+    __table_args__ = (UniqueConstraint("provider", name="uq_platform_provider"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    encrypted_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    key_hint: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
 
 
 class Course(Base):
