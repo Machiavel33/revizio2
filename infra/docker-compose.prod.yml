@@ -42,6 +42,8 @@ services:
       dockerfile: Dockerfile
     container_name: revizio-api
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,6 +63,9 @@ services:
       DOWNLOADS_DIR: /data/downloads
       TRANSCRIBE_ENGINE: ${TRANSCRIBE_ENGINE:-local}
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      SHEET_ENGINE: ${SHEET_ENGINE:-cloud}
+      OLLAMA_URL: ${OLLAMA_URL:-http://172.22.0.1:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
       HF_HOME: /data/whisper
       CORS_ORIGINS: ${CORS_ORIGINS:-https://revizio.darkops.fr}
     ports:
@@ -78,6 +83,8 @@ services:
       dockerfile: Dockerfile
     container_name: revizio-worker
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,6 +103,9 @@ services:
       LOCAL_STORAGE_DIR: /data/audio
       TRANSCRIBE_ENGINE: ${TRANSCRIBE_ENGINE:-local}
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      SHEET_ENGINE: ${SHEET_ENGINE:-cloud}
+      OLLAMA_URL: ${OLLAMA_URL:-http://172.22.0.1:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
       HF_HOME: /data/whisper
     volumes:
       - audio_data:/data/audio
