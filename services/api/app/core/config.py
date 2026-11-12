@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     whisper_device: str = "cpu"  # cpu|cuda
     whisper_compute_type: str = "int8"  # int8|float16|float32
 
+    # --- RGPD : rétention audio ---
+    # Supprime l'audio brut après transcription réussie (donnée personnelle).
+    delete_audio_after_transcription: bool = True
+
     # Upload limits (sécurité : prévention DoS mémoire)
     max_upload_bytes: int = 200 * 1024 * 1024  # 200 Mo
     allowed_audio_types: str = (

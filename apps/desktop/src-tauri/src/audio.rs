@@ -75,6 +75,8 @@ impl VadConfig {
 #[derive(Default)]
 pub struct AudioBuffer {
     pub samples: Mutex<Vec<f32>>,
+    /// Curseur de consommation pour le transport résilient (non destructif).
+    pub resilient_cursor: Mutex<usize>,
 }
 
 impl AudioBuffer {
@@ -86,6 +88,16 @@ impl AudioBuffer {
     }
     pub fn len(&self) -> usize {
         self.samples.lock().len()
+    }
+    /// Retourne les échantillons accumulés depuis le dernier drain résilient,
+    /// sans les retirer (le WAV final les conserve).
+    pub fn drain_resilient(&self) -> Vec<f32> {
+        let samples = self.samples.lock();
+        let mut cursor = self.resilient_cursor.lock();
+        let start = (*cursor).min(samples.len());
+        let out = samples[start..].to_vec();
+        *cursor = samples.len();
+        out
     }
 }
 

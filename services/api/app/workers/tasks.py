@@ -165,6 +165,17 @@ async def _run_transcribe(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
             if user_obj is not None:
                 await usage_svc.maybe_alert_quota(db, user_obj)
 
+            # RGPD : supprime l'audio brut après transcription réussie
+            if _settings.delete_audio_after_transcription and course.audio_url:
+                try:
+                    from app.services import storage
+
+                    key = storage.key_from_url(course.audio_url)
+                    storage.delete_audio(key)
+                    course.audio_url = None
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("Suppression audio échouée: %s", exc)
+
             course.status = "generating"
             job.status = "done"
             job.finished_at = _now()
@@ -274,13 +285,9 @@ async def _run_and_dispose(coro) -> None:
 
 @celery_app.task(name="revizio.transcribe")
 def transcribe_task(course_id: str, job_id: str) -> None:
-    asyncio.run(
-        _run_and_dispose(_run_transcribe(uuid.UUID(course_id), uuid.UUID(job_id)))
-    )
+    asyncio.run(_run_and_dispose(_run_transcribe(uuid.UUID(course_id), uuid.UUID(job_id))))
 
 
 @celery_app.task(name="revizio.generate_sheet")
 def generate_sheet_task(course_id: str, job_id: str) -> None:
-    asyncio.run(
-        _run_and_dispose(_run_generate_sheet(uuid.UUID(course_id), uuid.UUID(job_id)))
-    )
+    asyncio.run(_run_and_dispose(_run_generate_sheet(uuid.UUID(course_id), uuid.UUID(job_id))))

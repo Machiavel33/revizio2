@@ -5,7 +5,7 @@ import { audioBridge, bytesToWavBlob } from "../lib/audioBridge";
 import { api } from "../lib/api";
 import type { InputDevice } from "../lib/types";
 import Waveform from "../components/Waveform";
-import { useLiveTranscription } from "../hooks/useLiveTranscription";
+import { useResilientTransport } from "../hooks/useResilientTransport";
 
 type Phase = "idle" | "recording" | "saving";
 
@@ -24,7 +24,7 @@ export default function RecordPage() {
   const [calibrating, setCalibrating] = useState(false);
   const [calibration, setCalibration] = useState<string | null>(null);
 
-  const live = useLiveTranscription();
+  const live = useResilientTransport();
 
   const levelTimer = useRef<number | null>(null);
   const clockTimer = useRef<number | null>(null);
@@ -100,7 +100,7 @@ export default function RecordPage() {
 
   async function stop() {
     stopTimers();
-    live.stop();
+    void live.stop();
     setPhase("saving");
     setLevel(0);
     try {
@@ -260,11 +260,8 @@ export default function RecordPage() {
             </span>
           </div>
           <div className="flex-1 overflow-y-auto rounded-md bg-[color:var(--bg-inset)] p-4 text-sm leading-relaxed">
-            {live.finalText || live.partialText ? (
-              <p className="text-[color:var(--text-secondary)]">
-                {live.finalText}{" "}
-                <span className="text-[color:var(--text-muted)]">{live.partialText}</span>
-              </p>
+            {live.finalText ? (
+              <p className="text-[color:var(--text-secondary)]">{live.finalText}</p>
             ) : (
               <p className="text-[color:var(--text-muted)]">
                 {live.status === "error"

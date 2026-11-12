@@ -2,15 +2,26 @@
 
 use parking_lot::Mutex;
 use tauri::State;
+use uuid::Uuid;
 
 use crate::audio::{
     self, encode_pcm16, encode_wav, InputDevice, RecordingHandle, TARGET_SAMPLE_RATE,
 };
+use crate::chunker::{Chunker, ChunkOut, Spool};
+
+/// Session de transport résilient (chunker + spool).
+pub struct ResilientSession {
+    #[allow(dead_code)]
+    pub session_id: Uuid,
+    pub chunker: Chunker,
+    pub spool: Spool,
+}
 
 /// État global de l'application (session d'enregistrement courante).
 #[derive(Default)]
 pub struct AppState {
     pub recording: Mutex<Option<RecordingHandle>>,
+    pub resilient: Mutex<Option<ResilientSession>>,
 }
 
 #[derive(serde::Serialize)]
@@ -145,4 +156,176 @@ pub fn calibrate_microphone(
         ambient_rms: ambient,
         suggested_threshold: suggested,
     })
+}
+
+// --- Transport résilient (protocole rvzf-v1) ---
+
+#[derive(serde::Serialize)]
+pub struct ResilientChunk {
+    pub chunk_seq: u64,
+    pub frames_b64: Vec<String>,
+    pub chunk_end: String,
+    pub sha256: String,
+}
+
+fn chunk_to_wire(c: &ChunkOut) -> ResilientChunk {
+    use base64::Engine;
+    ResilientChunk {
+        chunk_seq: c.chunk_seq,
+        frames_b64: c
+            .frames
+            .iter()
+            .map(|f| base64::engine::general_purpose::STANDARD.encode(f))
+            .collect(),
+        chunk_end: c.chunk_end.clone(),
+        sha256: c.sha256.clone(),
+    }
+}
+
+/// Démarre une session de transport résilient (nouveau session_id + spool).
+#[tauri::command]
+pub fn start_resilient_session(
+    spool_root: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let mut guard = state.resilient.lock();
+    if guard.is_some() {
+        return Err("session résiliente déjà active".into());
+    }
+    let session_id = Uuid::new_v4();
+    let spool = Spool::new(std::path::Path::new(&spool_root), session_id)
+        .map_err(|e| e.to_string())?;
+    *guard = Some(ResilientSession {
+        session_id,
+        chunker: Chunker::new(session_id),
+        spool,
+    });
+    Ok(session_id.to_string())
+}
+
+/// Pousse des échantillons f32 (base64) dans le chunker, retourne les fragments prêts
+/// (stockés dans le spool avant retour). Le front les envoie puis appelle ack.
+#[tauri::command]
+pub fn push_resilient_samples(
+    samples_b64: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ResilientChunk>, String> {
+    use base64::Engine;
+    let mut guard = state.resilient.lock();
+    let session = guard.as_mut().ok_or("aucune session résiliente")?;
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(samples_b64)
+        .map_err(|e| e.to_string())?;
+    // raw = f32 little-endian
+    if raw.len() % 4 != 0 {
+        return Err("samples f32 invalides".into());
+    }
+    let samples: Vec<f32> = raw
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+    let chunks = session.chunker.push(&samples);
+    let mut out = Vec::with_capacity(chunks.len());
+    for c in &chunks {
+        session.spool.store(c).map_err(|e| e.to_string())?;
+        out.push(chunk_to_wire(c));
+    }
+    Ok(out)
+}
+
+/// Termine la session : vide le dernier fragment partiel et le retourne.
+#[tauri::command]
+pub fn finish_resilient_session(state: State<'_, AppState>) -> Result<Option<ResilientChunk>, String> {
+    let mut guard = state.resilient.lock();
+    let session = guard.as_mut().ok_or("aucune session résiliente")?;
+    match session.chunker.finish() {
+        Some(c) => {
+            session.spool.store(&c).map_err(|e| e.to_string())?;
+            Ok(Some(chunk_to_wire(&c)))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Acquitte un fragment (efface du spool après ACK serveur).
+#[tauri::command]
+pub fn ack_resilient_chunk(chunk_seq: u64, state: State<'_, AppState>) -> Result<(), String> {
+    let guard = state.resilient.lock();
+    let session = guard.as_ref().ok_or("aucune session résiliente")?;
+    session.spool.ack(chunk_seq).map_err(|e| e.to_string())
+}
+
+/// Liste les fragments non acquittés (à réémettre après reconnexion).
+#[tauri::command]
+pub fn pending_resilient_chunks(state: State<'_, AppState>) -> Result<Vec<u64>, String> {
+    let guard = state.resilient.lock();
+    let session = guard.as_ref().ok_or("aucune session résiliente")?;
+    Ok(session.spool.pending())
+}
+
+/// Relit un fragment du spool pour réémission.
+#[tauri::command]
+pub fn load_resilient_chunk(
+    chunk_seq: u64,
+    state: State<'_, AppState>,
+) -> Result<Option<ResilientChunk>, String> {
+    let guard = state.resilient.lock();
+    let session = guard.as_ref().ok_or("aucune session résiliente")?;
+    let c = session.spool.load(chunk_seq).map_err(|e| e.to_string())?;
+    Ok(c.as_ref().map(chunk_to_wire))
+}
+
+/// Ferme et nettoie la session résiliente.
+#[tauri::command]
+pub fn close_resilient_session(state: State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.resilient.lock();
+    if let Some(session) = guard.take() {
+        session.spool.clear();
+    }
+    Ok(())
+}
+
+/// Récupère les échantillons f32 accumulés depuis le dernier appel (base64),
+/// pour les pousser dans le chunker résilient. Non destructif (le WAV les garde).
+#[tauri::command]
+pub fn drain_resilient_samples(state: State<'_, AppState>) -> Result<String, String> {
+    use base64::Engine;
+    let guard = state.recording.lock();
+    let handle = guard.as_ref().ok_or("aucun enregistrement en cours")?;
+    let samples = handle.buffer.drain_resilient();
+    let mut bytes = Vec::with_capacity(samples.len() * 4);
+    for s in &samples {
+        bytes.extend_from_slice(&s.to_le_bytes());
+    }
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+}
+
+/// Nettoie les spools orphelins (sessions crashées) de plus de 24h.
+#[tauri::command]
+pub fn cleanup_orphan_spools(spool_root: String) -> Result<u32, String> {
+    let root = std::path::Path::new(&spool_root);
+    if !root.exists() {
+        return Ok(0);
+    }
+    let now = std::time::SystemTime::now();
+    let mut removed = 0u32;
+    if let Ok(entries) = std::fs::read_dir(root) {
+        for e in entries.flatten() {
+            let path = e.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let old = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| now.duration_since(t).ok())
+                .map(|d| d.as_secs() > 24 * 3600)
+                .unwrap_or(false);
+            if old && std::fs::remove_dir_all(&path).is_ok() {
+                removed += 1;
+            }
+        }
+    }
+    Ok(removed)
 }

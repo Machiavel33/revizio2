@@ -1,7 +1,9 @@
 //! Revizio desktop — point d'entrée bibliothèque Tauri.
 
 mod audio;
+mod chunker;
 mod commands;
+mod protocol;
 
 use commands::AppState;
 
@@ -23,6 +25,15 @@ pub fn run() {
             commands::recording_duration,
             commands::is_recording,
             commands::calibrate_microphone,
+            commands::start_resilient_session,
+            commands::drain_resilient_samples,
+            commands::push_resilient_samples,
+            commands::finish_resilient_session,
+            commands::ack_resilient_chunk,
+            commands::pending_resilient_chunks,
+            commands::load_resilient_chunk,
+            commands::close_resilient_session,
+            commands::cleanup_orphan_spools,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Revizio");
