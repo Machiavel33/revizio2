@@ -36,8 +36,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def _client_meta(request: Request) -> dict:
     """Métadonnées de traçabilité (IP, user-agent, origine)."""
     forwarded = request.headers.get("x-forwarded-for")
-    ip = forwarded.split(",")[0].strip() if forwarded else (
-        request.client.host if request.client else "unknown"
+    ip = (
+        forwarded.split(",")[0].strip()
+        if forwarded
+        else (request.client.host if request.client else "unknown")
     )
     return {
         "ip": ip,

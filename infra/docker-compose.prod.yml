@@ -100,6 +100,16 @@ services:
     volumes:
       - audio_data:/data/audio
       - whisper_cache:/data/whisper
+    # Le worker n'expose aucun serveur HTTP : on remplace le HEALTHCHECK hérité
+    # de l'image (curl sur :8000) par un ping Celery réel sur le broker.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - celery -A app.workers.celery_app.celery_app inspect ping -d celery@$$HOSTNAME || exit 1
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=1
 
   web:
