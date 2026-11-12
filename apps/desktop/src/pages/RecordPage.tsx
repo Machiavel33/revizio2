@@ -28,6 +28,7 @@ export default function RecordPage() {
 
   const levelTimer = useRef<number | null>(null);
   const clockTimer = useRef<number | null>(null);
+  const courseIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     audioBridge
@@ -70,6 +71,14 @@ export default function RecordPage() {
   async function start() {
     setError(null);
     try {
+      // 1. Crée le cours AVANT l'enregistrement (pour écrire en direct dessus)
+      const course = await api.createCourse(
+        title || "Cours sans titre",
+        subject || undefined,
+      );
+      courseIdRef.current = course.id;
+
+      // 2. Démarre la capture audio
       await audioBridge.start(device, vadThreshold);
       setPhase("recording");
       setElapsed(0);
@@ -81,8 +90,9 @@ export default function RecordPage() {
         }
       }, 80);
       clockTimer.current = window.setInterval(() => setElapsed((e) => e + 1), 1000);
-      // Démarre la transcription live (best-effort : si pas de clé Deepgram, erreur non bloquante)
-      void live.start("fr");
+
+      // 3. Démarre la transcription live PERSISTÉE sur ce cours
+      void live.start(course.id, "fr");
     } catch (e) {
       setError(String(e));
     }
@@ -96,13 +106,12 @@ export default function RecordPage() {
     try {
       const bytes = await audioBridge.stop();
       const blob = bytesToWavBlob(bytes);
-      const course = await api.createCourse(
-        title || "Cours sans titre",
-        subject || undefined,
-      );
-      await api.uploadAudio(course.id, blob, "cours.wav");
-      await api.processCourse(course.id);
-      navigate(`/courses/${course.id}`);
+      const courseId = courseIdRef.current;
+      if (!courseId) throw new Error("Cours introuvable");
+      // Upload de l'audio complet + traitement batch (transcription finale + fiche)
+      await api.uploadAudio(courseId, blob, "cours.wav");
+      await api.processCourse(courseId);
+      navigate(`/courses/${courseId}`);
     } catch (e) {
       setError(String(e));
       setPhase("idle");

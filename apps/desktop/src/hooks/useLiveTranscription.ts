@@ -11,7 +11,7 @@ interface LiveTranscription {
   finalText: string;
   partialText: string;
   error: string | null;
-  start: (language?: string) => Promise<void>;
+  start: (courseId: string, language?: string) => Promise<void>;
   stop: () => void;
 }
 
@@ -43,7 +43,7 @@ export function useLiveTranscription(): LiveTranscription {
   }, []);
 
   const start = useCallback(
-    async (language = "fr") => {
+    async (courseId: string, language = "fr") => {
       setError(null);
       setStatus("connecting");
       setFinalText("");
@@ -62,7 +62,9 @@ export function useLiveTranscription(): LiveTranscription {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "init", provider: "deepgram", language, token }));
+        ws.send(
+          JSON.stringify({ type: "init", course_id: courseId, language, token }),
+        );
       };
 
       ws.onmessage = (ev) => {

@@ -1,12 +1,13 @@
-"""WebSocket : proxy de transcription temps réel.
+"""WebSocket : transcription temps réel PERSISTÉE côté serveur.
 
 Le desktop envoie des chunks audio binaires ; le backend les relaie au provider
-de transcription streaming (Deepgram) avec la clé BYOK de l'utilisateur, et
-renvoie le texte incrémental au client.
+de transcription streaming (Deepgram) avec la clé (BYOK ou plateforme), renvoie
+le texte incrémental au client ET persiste chaque segment final dans le cours
+(transcript live), pour que le cours s'écrive en direct sur le serveur.
 
 Protocole client -> serveur :
   - 1er message texte JSON :
-      {"type":"init","provider":"deepgram","language":"fr","token":"<access_jwt>"}
+      {"type":"init","course_id":"<uuid>","language":"fr","token":"<access_jwt>"}
   - messages binaires : chunks audio (webm/opus)
   - message texte {"type":"stop"} pour terminer
 
@@ -19,21 +20,24 @@ Protocole serveur -> client :
 
 import json
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from app.core.crypto import decrypt_secret
 from app.core.database import AsyncSessionLocal
 from app.core.security import TokenError, decode_token
-from app.models import User, UserApiKey
+from app.models import Course, Transcript, User
 from app.services.streaming import stream_deepgram
+from app.workers.tasks import _resolve_key
 
 router = APIRouter()
 
 
-async def _authenticate(token: str) -> tuple[uuid.UUID, str] | None:
-    """Valide le JWT et récupère la clé Deepgram BYOK. Retourne (user_id, api_key)."""
+async def _authenticate(
+    token: str, course_id: uuid.UUID | None
+) -> tuple[uuid.UUID, str, Course | None] | None:
+    """Valide le JWT, résout la clé Deepgram (BYOK/plateforme) et le cours."""
     try:
         payload = decode_token(token, expected_type="access")
         user_id = uuid.UUID(payload["sub"])
@@ -44,15 +48,34 @@ async def _authenticate(token: str) -> tuple[uuid.UUID, str] | None:
         user = await db.get(User, user_id)
         if user is None or not user.is_active:
             return None
-        key = await db.scalar(
-            select(UserApiKey).where(
-                UserApiKey.user_id == user_id,
-                UserApiKey.provider == "deepgram",
-            )
-        )
-        if key is None:
+        api_key, _src = await _resolve_key(db, user_id, "deepgram")
+        if api_key is None:
             return None
-        return user_id, decrypt_secret(key.encrypted_key)
+        course = None
+        if course_id is not None:
+            course = await db.get(Course, course_id)
+            if course is None or course.user_id != user_id:
+                return None
+        return user_id, api_key, course
+
+
+async def _append_final_segment(course_id: uuid.UUID, text: str) -> None:
+    """Persiste un segment final dans le transcript du cours (live)."""
+    async with AsyncSessionLocal() as db:
+        transcript = await db.scalar(
+            select(Transcript).where(Transcript.course_id == course_id)
+        )
+        if transcript is None:
+            transcript = Transcript(course_id=course_id, full_text="", segments=[])
+            db.add(transcript)
+        # Concatène le texte et ajoute le segment horodaté
+        transcript.full_text = (transcript.full_text + " " + text).strip()
+        segs = list(transcript.segments or [])
+        segs.append({"text": text, "ts": datetime.now(UTC).isoformat()})
+        transcript.segments = segs
+        transcript.provider = transcript.provider or "deepgram"
+        transcript.model = transcript.model or "nova-2"
+        await db.commit()
 
 
 @router.websocket("/ws/transcribe")
@@ -70,15 +93,25 @@ async def ws_transcribe(websocket: WebSocket) -> None:
         await websocket.close(code=1003)
         return
 
-    auth = await _authenticate(init.get("token", ""))
+    course_id: uuid.UUID | None = None
+    if init.get("course_id"):
+        try:
+            course_id = uuid.UUID(init["course_id"])
+        except (ValueError, TypeError):
+            course_id = None
+
+    auth = await _authenticate(init.get("token", ""), course_id)
     if auth is None:
         await websocket.send_json(
-            {"type": "error", "message": "Auth invalide ou clé Deepgram manquante"}
+            {
+                "type": "error",
+                "message": "Auth invalide, clé Deepgram manquante ou cours introuvable",
+            }
         )
         await websocket.close(code=1008)
         return
 
-    _user_id, api_key = auth
+    _user_id, api_key, _course = auth
     language = init.get("language", "fr")
     await websocket.send_json({"type": "ready"})
 
@@ -86,7 +119,10 @@ async def ws_transcribe(websocket: WebSocket) -> None:
         await websocket.send_json({"type": "partial", "text": text})
 
     async def on_final(text: str) -> None:
+        # Renvoie au client ET persiste côté serveur (écriture en direct)
         await websocket.send_json({"type": "final", "text": text})
+        if course_id is not None:
+            await _append_final_segment(course_id, text)
 
     async def audio_source():
         while True:
