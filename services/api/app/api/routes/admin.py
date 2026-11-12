@@ -9,8 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AdminUser
 from app.core.database import get_db
-from app.models import Course, Job, User
-from app.schemas.admin import AdminJobOut, AdminStats, AdminUserOut, AdminUserUpdate
+from app.models import AuditLog, Course, Job, User
+from app.schemas.admin import (
+    AdminJobOut,
+    AdminStats,
+    AdminUserOut,
+    AdminUserUpdate,
+    AuditLogOut,
+    AuditVerifyOut,
+)
+from app.services import audit
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -70,6 +78,13 @@ async def update_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable")
     user.is_active = payload.is_active
     await db.flush()
+    await audit.record(
+        db,
+        action="admin.user.update",
+        actor_id=_admin.id,
+        target=str(user_id),
+        metadata={"is_active": payload.is_active},
+    )
     course_count = int(
         await db.scalar(select(func.count()).select_from(Course).where(Course.user_id == user.id))
         or 0
@@ -105,3 +120,23 @@ async def list_jobs(
         )
         for job, email, title in rows.all()
     ]
+
+
+@router.get("/audit", response_model=list[AuditLogOut])
+async def list_audit(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 100,
+) -> list[AuditLog]:
+    result = await db.scalars(select(AuditLog).order_by(AuditLog.seq.desc()).limit(min(limit, 500)))
+    return list(result)
+
+
+@router.get("/audit/verify", response_model=AuditVerifyOut)
+async def verify_audit(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AuditVerifyOut:
+    ok, broken_at = await audit.verify_chain(db)
+    total = int(await db.scalar(select(func.count()).select_from(AuditLog)) or 0)
+    return AuditVerifyOut(ok=ok, broken_at_seq=broken_at, total_entries=total)

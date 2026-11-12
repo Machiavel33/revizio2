@@ -104,6 +104,11 @@ export const api = {
       body: JSON.stringify({ provider, api_key, is_default }),
     }),
   deleteKey: (id: string) => request<void>(`/api/api-keys/${id}`, { method: "DELETE" }),
+  rotateKey: (id: string, provider: string, api_key: string) =>
+    request<ApiKey>(`/api/api-keys/${id}/rotate`, {
+      method: "POST",
+      body: JSON.stringify({ provider, api_key, is_default: false }),
+    }),
 
   listCourses: () => request<Course[]>("/api/courses"),
   getCourse: (id: string) => request<CourseDetail>(`/api/courses/${id}`),

@@ -146,3 +146,50 @@ async def test_course_isolation_between_users(client):
 
     forbidden = await client.get(f"/api/courses/{course_id}", headers=headers_b)
     assert forbidden.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_byok_rotate(client):
+    reg = await client.post(
+        "/api/auth/register",
+        json={"email": "rotate@example.com", "password": "password123"},
+    )
+    headers = {"Authorization": f"Bearer {reg.json()['access_token']}"}
+
+    created = await client.post(
+        "/api/api-keys",
+        json={"provider": "openai", "api_key": "sk-old-key-1234567890", "is_default": True},
+        headers=headers,
+    )
+    key_id = created.json()["id"]
+    old_hint = created.json()["key_hint"]
+
+    rotated = await client.post(
+        f"/api/api-keys/{key_id}/rotate",
+        json={"provider": "openai", "api_key": "sk-new-key-abcdefghij"},
+        headers=headers,
+    )
+    assert rotated.status_code == 200
+    assert rotated.json()["key_hint"] != old_hint
+    assert rotated.json()["key_hint"] == "sk-n...ghij"
+
+
+@pytest.mark.asyncio
+async def test_byok_rotate_provider_mismatch(client):
+    reg = await client.post(
+        "/api/auth/register",
+        json={"email": "rotatemis@example.com", "password": "password123"},
+    )
+    headers = {"Authorization": f"Bearer {reg.json()['access_token']}"}
+    created = await client.post(
+        "/api/api-keys",
+        json={"provider": "openai", "api_key": "sk-old-key-1234567890"},
+        headers=headers,
+    )
+    key_id = created.json()["id"]
+    resp = await client.post(
+        f"/api/api-keys/{key_id}/rotate",
+        json={"provider": "anthropic", "api_key": "sk-ant-new-1234567890"},
+        headers=headers,
+    )
+    assert resp.status_code == 400

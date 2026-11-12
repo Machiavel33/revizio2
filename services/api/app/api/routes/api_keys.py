@@ -12,6 +12,7 @@ from app.core.crypto import encrypt_secret, mask_secret
 from app.core.database import get_db
 from app.models import UserApiKey
 from app.schemas.api_key import ApiKeyCreate, ApiKeyOut
+from app.services import audit
 
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])
 
@@ -59,6 +60,45 @@ async def create_key(
     )
     db.add(key)
     await db.flush()
+    await audit.record(
+        db,
+        action="byok.create",
+        actor_id=user.id,
+        target=str(key.id),
+        metadata={"provider": payload.provider},
+    )
+    return key
+
+
+@router.post("/{key_id}/rotate", response_model=ApiKeyOut)
+async def rotate_key(
+    key_id: uuid.UUID,
+    payload: ApiKeyCreate,
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserApiKey:
+    """Remplace la valeur d'une clé API existante (rotation côté utilisateur)."""
+    key = await db.get(UserApiKey, key_id)
+    if key is None or key.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clé introuvable",
+        )
+    if payload.provider != key.provider:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Le provider doit correspondre à la clé existante",
+        )
+    key.encrypted_key = encrypt_secret(payload.api_key)
+    key.key_hint = mask_secret(payload.api_key)
+    await db.flush()
+    await audit.record(
+        db,
+        action="byok.rotate",
+        actor_id=user.id,
+        target=str(key.id),
+        metadata={"provider": key.provider},
+    )
     return key
 
 
@@ -74,4 +114,12 @@ async def delete_key(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Clé introuvable",
         )
+    provider = key.provider
     await db.delete(key)
+    await audit.record(
+        db,
+        action="byok.delete",
+        actor_id=user.id,
+        target=str(key_id),
+        metadata={"provider": provider},
+    )

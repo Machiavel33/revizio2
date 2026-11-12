@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { KeyRound, Trash2, Plus } from "lucide-react";
+import { KeyRound, Trash2, Plus, RefreshCw } from "lucide-react";
 import { api } from "../lib/api";
 import type { ApiKey } from "../lib/types";
 
@@ -40,6 +40,18 @@ export default function SettingsPage() {
   async function remove(id: string) {
     await api.deleteKey(id);
     await load();
+  }
+
+  async function rotate(k: ApiKey) {
+    const value = window.prompt(`Nouvelle clé ${k.provider} (remplace ${k.key_hint}) :`);
+    if (!value) return;
+    setError(null);
+    try {
+      await api.rotateKey(k.id, k.provider, value);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   const current = PROVIDERS.find((p) => p.id === provider);
@@ -105,13 +117,23 @@ export default function SettingsPage() {
                     <span className="text-xs text-[color:var(--accent-success)]">défaut</span>
                   )}
                 </div>
-                <button
-                  onClick={() => remove(k.id)}
-                  className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:text-[color:var(--accent-danger)]"
-                  aria-label="Supprimer"
-                >
-                  <Trash2 size={16} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => rotate(k)}
+                    className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:text-[color:var(--accent-primary)]"
+                    aria-label="Rotation"
+                    title="Rotation de la clé"
+                  >
+                    <RefreshCw size={16} />
+                  </button>
+                  <button
+                    onClick={() => remove(k.id)}
+                    className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:text-[color:var(--accent-danger)]"
+                    aria-label="Supprimer"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
             ))
           )}

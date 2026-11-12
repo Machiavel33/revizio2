@@ -24,6 +24,7 @@ from app.schemas.auth import (
     UserOut,
     UserRegister,
 )
+from app.services import audit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -46,6 +47,13 @@ async def register(
     )
     db.add(user)
     await db.flush()
+    await audit.record(
+        db,
+        action="user.register",
+        actor_id=user.id,
+        target=str(user.id),
+        metadata={"email": user.email},
+    )
     return TokenPair(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
@@ -72,6 +80,7 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Compte désactivé",
         )
+    await audit.record(db, action="user.login", actor_id=user.id, target=str(user.id))
     return TokenPair(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),

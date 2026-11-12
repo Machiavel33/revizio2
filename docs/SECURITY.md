@@ -126,18 +126,54 @@ Deux SBOM CycloneDX sont générés :
 Ils servent à la traçabilité de la chaîne d'approvisionnement et à l'analyse de vulnérabilités
 en aval (ex. Dependency-Track, Grype).
 
+### CSP stricte
+
+- **Fonts self-hostées** via `@fontsource` (Inter, Space Grotesk, JetBrains Mono) — plus aucune
+  dépendance à Google Fonts. 35 fichiers woff2 bundlés localement.
+- **CSP stricte** (nginx + Tauri) : `default-src 'self'`, `script-src 'self'`,
+  `object-src 'none'`, `frame-ancestors 'none'`, `base-uri 'self'`, `form-action 'self'`.
+  Seul `style-src` autorise `'unsafe-inline'` (styles inline React/Tailwind).
+
+### Journal d'audit immuable
+
+- Table `audit_logs` **append-only** avec **chaîne de hachage** SHA-256 :
+  `entry_hash = SHA256(prev_hash || seq || actor || action || target || metadata || ts)`.
+- Toute altération/suppression d'une entrée casse la chaîne, détectable via
+  `GET /api/admin/audit/verify` (retourne `ok` + `broken_at_seq`).
+- Événements journalisés : `user.register`, `user.login`, `byok.create`, `byok.rotate`,
+  `byok.delete`, `admin.user.update`.
+- Consultation admin : `GET /api/admin/audit`.
+
+### Rotation des clés BYOK
+
+- **Rotation côté utilisateur** : `POST /api/api-keys/{id}/rotate` remplace la valeur d'une
+  clé existante (re-chiffrement AES-256-GCM), avec vérification du provider.
+- **Rotation de la clé maître** : `scripts/rekey_byok.py` re-chiffre toutes les clés stockées
+  d'une ancienne clé maître vers une nouvelle (transaction unique, `--dry-run` disponible).
+- UI : bouton de rotation par clé dans les réglages.
+
+### Migration react-router 7.x
+
+- Passage de react-router-dom 6.x → 7.18.5 (corrige la CVE open redirect).
+- API déclarative inchangée (BrowserRouter/Routes/Route/Link/NavLink/useNavigate/useParams).
+- **pnpm audit : 0 vulnérabilité** (toutes sévérités).
+
 ---
 
-## 6. Recommandations futures (hors périmètre actuel)
+## 6. Recommandations futures
 
-1. **Rate-limit distribué** : remplacer le store in-memory par Redis (multi-instance).
-2. **2FA admin** : TOTP pour les comptes administrateurs.
-3. **CSP stricte** côté web (actuellement permissive pour les fonts Google).
-4. **Rotation des clés BYOK** : endpoint de re-chiffrement.
-5. **Audit log immuable** : journalisation append-only des actions admin.
-6. **Migration react-router 7.x** lors d'un refactor de routing.
-7. **SBOM** : génération (CycloneDX) pour la chaîne d'approvisionnement.
+**Livrées :**
+1. ✅ Rate-limit distribué Redis (fenêtre glissante atomique Lua).
+2. ✅ CSP stricte (fonts self-hostées, headers nginx + Tauri).
+3. ✅ Rotation des clés BYOK (endpoint + re-keying master key).
+4. ✅ Audit log immuable (chaîne de hachage SHA-256).
+5. ✅ Migration react-router 7.x (0 vulnérabilité JS).
+6. ✅ SBOM CycloneDX (Python + JS).
+
+**Restantes :**
+7. **2FA admin** : TOTP pour les comptes administrateurs.
 8. **Tests de charge** : valider les limites de rate-limit et d'upload sous charge réelle.
+9. **Signature des artefacts** : cosign/Sigstore pour les images Docker et binaires Tauri.
 
 ---
 

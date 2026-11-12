@@ -1,6 +1,7 @@
 """Exposition des modèles pour Alembic et l'app."""
 
 from app.models.models import (
+    AuditLog,
     Course,
     Flashcard,
     Job,
@@ -20,4 +21,5 @@ __all__ = [
     "Flashcard",
     "Job",
     "UsageLog",
+    "AuditLog",
 ]

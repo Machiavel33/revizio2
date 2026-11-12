@@ -172,3 +172,27 @@ class UsageLog(Base):
     amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AuditLog(Base):
+    """Journal d'audit immuable (chaîne de hachage append-only).
+
+    Chaque entrée contient le hash de l'entrée précédente (prev_hash) et son
+    propre hash (entry_hash = SHA256(prev_hash || payload)). Toute altération
+    d'une entrée casse la chaîne et est détectable via verify_chain().
+    """
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    # Séquence monotone pour l'ordre strict de la chaîne
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, unique=True, index=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    action: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    target: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    prev_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    entry_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)

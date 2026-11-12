@@ -44,3 +44,23 @@ class AdminJobOut(BaseModel):
     finished_at: datetime | None
     user_email: str
     course_title: str
+
+
+class AuditLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    seq: int
+    actor_id: uuid.UUID | None
+    action: str
+    target: str | None
+    metadata_: dict = {}
+    prev_hash: str
+    entry_hash: str
+    created_at: datetime
+
+
+class AuditVerifyOut(BaseModel):
+    ok: bool
+    broken_at_seq: int | None
+    total_entries: int
