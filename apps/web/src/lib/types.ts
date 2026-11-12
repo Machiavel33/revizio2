@@ -215,3 +215,38 @@ export interface SmtpConfig {
   from_addr: string;
   configured: boolean;
 }
+
+// --- Révision ---
+export interface Sheet {
+  id: string;
+  course_id: string | null;
+  title: string;
+  subject: string | null;
+  tags: string[];
+  is_manual: boolean;
+  content: Record<string, unknown>;
+  created_at: string;
+}
+export interface ExamFolder {
+  id: string;
+  name: string;
+  exam_date: string | null;
+  description: string;
+  created_at: string;
+  item_count: number;
+}
+export interface QuizQuestion {
+  id: string;
+  position: number;
+  question: string;
+  choices: string[];
+  correct_index: number;
+  explanation: string;
+}
+export interface Quiz {
+  id: string;
+  title: string;
+  model: string;
+  created_at: string;
+  questions: QuizQuestion[];
+}

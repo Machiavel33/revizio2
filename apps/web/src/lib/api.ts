@@ -10,9 +10,12 @@ import type {
   Alert,
   DownloadItem,
   EmailLog,
+  ExamFolder,
   KeyMode,
   OnlineInfo,
   PlatformKey,
+  Quiz,
+  Sheet,
   SmtpConfig,
   SystemInfo,
   TokenPair,
@@ -200,6 +203,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ provider, api_key, account_label }),
     }),
+  adminPlatformAccounts: () => request<string[]>("/api/admin/platform-keys/accounts"),
 
   // Emails
   adminEmailConfig: () => request<SmtpConfig>("/api/admin/email/config"),
@@ -225,6 +229,49 @@ export const api = {
   // Alertes
   adminDeleteAlert: (id: string) =>
     request<void>(`/api/admin/alerts/${id}`, { method: "DELETE" }),
+
+  // Révision : fiches
+  listSheets: () => request<Sheet[]>("/api/revision/sheets"),
+  createSheet: (title: string, subject: string | null, tags: string[], content: object) =>
+    request<Sheet>("/api/revision/sheets", {
+      method: "POST",
+      body: JSON.stringify({ title, subject, tags, content }),
+    }),
+  updateSheet: (id: string, patch: object) =>
+    request<Sheet>(`/api/revision/sheets/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteSheet: (id: string) =>
+    request<void>(`/api/revision/sheets/${id}`, { method: "DELETE" }),
+
+  // Révision : dossiers
+  listFolders: () => request<ExamFolder[]>("/api/revision/folders"),
+  createFolder: (name: string, exam_date: string | null, description: string) =>
+    request<ExamFolder>("/api/revision/folders", {
+      method: "POST",
+      body: JSON.stringify({ name, exam_date, description }),
+    }),
+  deleteFolder: (id: string) =>
+    request<void>(`/api/revision/folders/${id}`, { method: "DELETE" }),
+  addFolderItem: (folderId: string, sheetId: string) =>
+    request<{ detail: string }>(`/api/revision/folders/${folderId}/items`, {
+      method: "POST",
+      body: JSON.stringify({ study_sheet_id: sheetId }),
+    }),
+  folderSheets: (folderId: string) =>
+    request<Sheet[]>(`/api/revision/folders/${folderId}/sheets`),
+
+  // Révision : quiz
+  generateQuiz: (folder_id: string | null, sheet_ids: string[], count: number) =>
+    request<Quiz>("/api/revision/quiz/generate", {
+      method: "POST",
+      body: JSON.stringify({ folder_id, sheet_ids, count }),
+    }),
+  listQuizzes: () => request<Quiz[]>("/api/revision/quizzes"),
+  getQuiz: (id: string) => request<Quiz>(`/api/revision/quizzes/${id}`),
+  deleteQuiz: (id: string) =>
+    request<void>(`/api/revision/quizzes/${id}`, { method: "DELETE" }),
 
   // Mot de passe oublié
   forgotPassword: (email: string) =>

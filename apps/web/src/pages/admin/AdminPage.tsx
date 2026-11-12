@@ -468,8 +468,13 @@ function PlatformKeysTab({ keys, onChange }: { keys: PlatformKey[]; onChange: ()
   const [provider, setProvider] = useState("openai");
   const [value, setValue] = useState("");
   const [account, setAccount] = useState("");
+  const [accounts, setAccounts] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.adminPlatformAccounts().then(setAccounts).catch(() => {});
+  }, [keys]);
 
   async function add() {
     setError(null);
@@ -512,10 +517,16 @@ function PlatformKeysTab({ keys, onChange }: { keys: PlatformKey[]; onChange: ()
           </select>
           <input
             className="input"
+            list="platform-accounts"
             value={account}
             onChange={(e) => setAccount(e.target.value)}
             placeholder="compte associé (ex: compte OpenAI école)"
           />
+          <datalist id="platform-accounts">
+            {accounts.map((a) => (
+              <option key={a} value={a} />
+            ))}
+          </datalist>
           <input
             className="input sm:col-span-2"
             type="password"

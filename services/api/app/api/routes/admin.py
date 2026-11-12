@@ -594,3 +594,15 @@ async def delete_alert(
     alert = await db.get(Alert, alert_id)
     if alert is not None:
         await db.delete(alert)
+
+
+@router.get("/platform-keys/accounts")
+async def platform_accounts(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[str]:
+    """Liste des comptes associés déjà utilisés (pour autocomplete)."""
+    rows = await db.scalars(
+        select(PlatformKey.account_label).where(PlatformKey.account_label != "").distinct()
+    )
+    return [r for r in rows if r]

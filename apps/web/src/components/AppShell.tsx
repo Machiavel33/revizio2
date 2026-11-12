@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Home, Settings, LogOut, Shield, Download } from "lucide-react";
+import { Home, Settings, LogOut, Shield, Download, BookOpen } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import type { ReactNode } from "react";
 import Logo from "./Logo";
@@ -9,6 +9,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const items = [
     { to: "/", label: "Mes cours", icon: Home, end: true },
+    { to: "/revision", label: "Révision", icon: BookOpen, end: false },
     { to: "/download", label: "Télécharger l'app", icon: Download, end: false },
     { to: "/settings", label: "Réglages", icon: Settings, end: false },
   ];

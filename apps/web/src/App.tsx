@@ -7,6 +7,7 @@ import DashboardPage from "./pages/DashboardPage";
 import CoursePage from "./pages/CoursePage";
 import SettingsPage from "./pages/SettingsPage";
 import DownloadPage from "./pages/DownloadPage";
+import RevisionPage from "./pages/RevisionPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import AdminPage from "./pages/admin/AdminPage";
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/courses/:id" element={<CoursePage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/revision" element={<RevisionPage />} />
         <Route path="/download" element={<DownloadPage />} />
         {user.role === "admin" && <Route path="/admin" element={<AdminPage />} />}
         <Route path="*" element={<Navigate to="/" replace />} />

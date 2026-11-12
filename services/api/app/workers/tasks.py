@@ -181,11 +181,14 @@ async def _run_generate_sheet(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
 
             sheet = await db.scalar(select(StudySheet).where(StudySheet.course_id == course_id))
             if sheet is None:
-                sheet = StudySheet(course_id=course_id)
+                sheet = StudySheet(course_id=course_id, user_id=course.user_id)
                 db.add(sheet)
                 await db.flush()
             sheet.content = result["content"]
             sheet.model = result["model"]
+            sheet.title = result["content"].get("title", course.title)
+            sheet.subject = course.subject
+            sheet.tags = course.tags or []
 
             from app.services import usage as usage_svc
 

@@ -105,6 +105,7 @@ class Course(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="Cours sans titre")
     subject: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     language: Mapped[str] = mapped_column(String(10), nullable=False, default="fr")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="recording")
     audio_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
@@ -144,15 +145,23 @@ class StudySheet(Base):
     __tablename__ = "study_sheets"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
-    course_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), unique=True
+    # course_id nullable : une fiche peut être créée manuellement (sans cours)
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), unique=True, nullable=True
     )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    subject: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     content: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     model: Mapped[str] = mapped_column(String(60), nullable=False, default="")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
-    course: Mapped["Course"] = relationship(back_populates="study_sheet")
+    course: Mapped["Course | None"] = relationship(back_populates="study_sheet")
     flashcards: Mapped[list["Flashcard"]] = relationship(
         back_populates="study_sheet", cascade="all, delete-orphan"
     )
@@ -302,3 +311,76 @@ class SystemSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_now, onupdate=_now
     )
+
+
+class ExamFolder(Base):
+    """Dossier d'examen : regroupe des fiches/cours pour préparer un examen."""
+
+    __tablename__ = "exam_folders"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    exam_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    items: Mapped[list["ExamFolderItem"]] = relationship(
+        back_populates="folder", cascade="all, delete-orphan"
+    )
+
+
+class ExamFolderItem(Base):
+    """Élément d'un dossier d'examen : une fiche de révision (par id)."""
+
+    __tablename__ = "exam_folder_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    folder_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exam_folders.id", ondelete="CASCADE"), index=True
+    )
+    study_sheet_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("study_sheets.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    folder: Mapped["ExamFolder"] = relationship(back_populates="items")
+
+
+class Quiz(Base):
+    """Quiz généré par l'IA à partir de fiches de révision."""
+
+    __tablename__ = "quizzes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exam_folders.id", ondelete="SET NULL"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="Quiz")
+    model: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    questions: Mapped[list["QuizQuestion"]] = relationship(
+        back_populates="quiz", cascade="all, delete-orphan"
+    )
+
+
+class QuizQuestion(Base):
+    __tablename__ = "quiz_questions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    quiz_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("quizzes.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    choices: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    correct_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    quiz: Mapped["Quiz"] = relationship(back_populates="questions")
