@@ -261,11 +261,26 @@ async def _run_generate_sheet(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
             await db.commit()
 
 
+async def _run_and_dispose(coro) -> None:
+    """Exécute une coroutine puis dispose l'engine (évite le conflit de boucle
+    asyncio entre tâches Celery successives)."""
+    from app.core.database import engine
+
+    try:
+        await coro
+    finally:
+        await engine.dispose()
+
+
 @celery_app.task(name="revizio.transcribe")
 def transcribe_task(course_id: str, job_id: str) -> None:
-    asyncio.run(_run_transcribe(uuid.UUID(course_id), uuid.UUID(job_id)))
+    asyncio.run(
+        _run_and_dispose(_run_transcribe(uuid.UUID(course_id), uuid.UUID(job_id)))
+    )
 
 
 @celery_app.task(name="revizio.generate_sheet")
 def generate_sheet_task(course_id: str, job_id: str) -> None:
-    asyncio.run(_run_generate_sheet(uuid.UUID(course_id), uuid.UUID(job_id)))
+    asyncio.run(
+        _run_and_dispose(_run_generate_sheet(uuid.UUID(course_id), uuid.UUID(job_id)))
+    )
