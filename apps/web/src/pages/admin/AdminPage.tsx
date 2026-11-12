@@ -10,6 +10,7 @@ import {
   KeyRound,
   Trash2,
   Plus,
+  Mail,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import type {
@@ -17,13 +18,24 @@ import type {
   AdminStats,
   AdminUser,
   Alert,
+  EmailLog,
   OnlineInfo,
   PlatformKey,
+  SmtpConfig,
   SystemInfo,
   UserUsage,
 } from "../../lib/types";
 
-type Tab = "stats" | "users" | "platform" | "alerts" | "usage" | "system" | "online" | "jobs";
+type Tab =
+  | "stats"
+  | "users"
+  | "platform"
+  | "alerts"
+  | "usage"
+  | "emails"
+  | "system"
+  | "online"
+  | "jobs";
 
 const PROVIDERS = [
   { id: "openai", label: "OpenAI" },
@@ -41,6 +53,8 @@ export default function AdminPage() {
   const [online, setOnline] = useState<OnlineInfo | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [usage, setUsage] = useState<UserUsage[]>([]);
+  const [emailLogs, setEmailLogs] = useState<EmailLog[]>([]);
+  const [smtp, setSmtp] = useState<SmtpConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +62,7 @@ export default function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [s, u, j, pk, sys, on, al, us] = await Promise.all([
+      const [s, u, j, pk, sys, on, al, us, el, sm] = await Promise.all([
         api.adminStats(),
         api.adminUsers(),
         api.adminJobs(),
@@ -57,6 +71,8 @@ export default function AdminPage() {
         api.adminOnline(),
         api.adminAlerts(),
         api.adminUsage(),
+        api.adminEmailLogs(),
+        api.adminEmailConfig(),
       ]);
       setStats(s);
       setUsers(u);
@@ -66,6 +82,8 @@ export default function AdminPage() {
       setUsage(us);
       setSystem(sys);
       setOnline(on);
+      setEmailLogs(el);
+      setSmtp(sm);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -76,6 +94,11 @@ export default function AdminPage() {
   async function markRead(id: string) {
     await api.adminMarkAlertRead(id);
     setAlerts((list) => list.map((a) => (a.id === id ? { ...a, is_read: true } : a)));
+  }
+
+  async function deleteAlert(id: string) {
+    await api.adminDeleteAlert(id);
+    setAlerts((list) => list.filter((a) => a.id !== id));
   }
 
   useEffect(() => {
@@ -110,7 +133,17 @@ export default function AdminPage() {
 
       <div className="mb-6 flex flex-wrap gap-2">
         {(
-          ["stats", "users", "platform", "alerts", "usage", "system", "online", "jobs"] as Tab[]
+          [
+            "stats",
+            "users",
+            "platform",
+            "alerts",
+            "usage",
+            "emails",
+            "system",
+            "online",
+            "jobs",
+          ] as Tab[]
         ).map((t) => {
           const unread = alerts.filter((a) => !a.is_read).length;
           return (
@@ -133,11 +166,13 @@ export default function AdminPage() {
                       ? `Alertes${unread ? ` (${unread})` : ""}`
                       : t === "usage"
                         ? "Quotas & usage"
-                        : t === "system"
-                          ? "Système"
-                          : t === "online"
-                            ? `En ligne${online ? ` (${online.count})` : ""}`
-                            : "Jobs"}
+                        : t === "emails"
+                          ? "Emails"
+                          : t === "system"
+                            ? "Système"
+                            : t === "online"
+                              ? `En ligne${online ? ` (${online.count})` : ""}`
+                              : "Jobs"}
             </button>
           );
         })}
@@ -156,13 +191,15 @@ export default function AdminPage() {
       ) : tab === "stats" && stats ? (
         <StatsTab stats={stats} />
       ) : tab === "users" ? (
-        <UsersTab users={users} onUpdate={updateUser} />
+        <UsersTab users={users} onUpdate={updateUser} onRefresh={load} />
       ) : tab === "platform" ? (
         <PlatformKeysTab keys={platformKeys} onChange={load} />
       ) : tab === "alerts" ? (
-        <AlertsTab alerts={alerts} onRead={markRead} />
+        <AlertsTab alerts={alerts} onRead={markRead} onDelete={deleteAlert} />
       ) : tab === "usage" ? (
         <UsageTab usage={usage} />
+      ) : tab === "emails" ? (
+        <EmailsTab smtp={smtp} logs={emailLogs} onRefresh={load} />
       ) : tab === "system" ? (
         <SystemTab system={system} />
       ) : tab === "online" ? (
@@ -233,87 +270,204 @@ function ProviderBadges({ providers, color }: { providers: string[]; color: stri
 function UsersTab({
   users,
   onUpdate,
+  onRefresh,
 }: {
   users: AdminUser[];
   onUpdate: (u: AdminUser, patch: { is_active?: boolean; key_mode?: string }) => void;
+  onRefresh: () => void;
 }) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("student");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function create() {
+    setError(null);
+    setBusy(true);
+    try {
+      await api.adminCreateUser(email, password, name, role);
+      setEmail("");
+      setPassword("");
+      setName("");
+      setRole("student");
+      setShowCreate(false);
+      onRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeRole(u: AdminUser, newRole: string) {
+    await api.adminSetRole(u.id, newRole);
+    onRefresh();
+  }
+
+  async function remove(u: AdminUser) {
+    if (!window.confirm(`Supprimer définitivement ${u.email} ?`)) return;
+    try {
+      await api.adminDeleteUser(u.id);
+      onRefresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function forceReset(u: AdminUser) {
+    try {
+      await api.adminForceReset(u.id);
+      alert(`Lien de réinitialisation envoyé à ${u.email}`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   return (
-    <div className="card overflow-x-auto p-0">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-[color:var(--border-subtle)] text-left text-xs uppercase tracking-wider text-[color:var(--text-muted)]">
-            <th className="px-4 py-3">Email</th>
-            <th className="px-4 py-3">Rôle</th>
-            <th className="px-4 py-3">Cours</th>
-            <th className="px-4 py-3">Mode clé IA</th>
-            <th className="px-4 py-3">Clés perso (BYOK)</th>
-            <th className="px-4 py-3">Statut</th>
-            <th className="px-4 py-3"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((u) => (
-            <tr key={u.id} className="border-b border-[color:var(--border-subtle)]/50">
-              <td className="px-4 py-3">
-                <div className="font-mono text-xs">{u.email}</div>
-                <div className="text-xs text-[color:var(--text-muted)]">{u.display_name}</div>
-              </td>
-              <td className="px-4 py-3">
-                <span
-                  className={`rounded px-2 py-0.5 text-xs ${
-                    u.role === "admin"
-                      ? "bg-[color:var(--accent-secondary)]/15 text-[color:var(--accent-secondary)]"
-                      : "bg-[color:var(--bg-elevated)] text-[color:var(--text-secondary)]"
-                  }`}
-                >
-                  {u.role}
-                </span>
-              </td>
-              <td className="px-4 py-3">{u.course_count}</td>
-              <td className="px-4 py-3">
-                <select
-                  value={u.key_mode}
-                  onChange={(e) => onUpdate(u, { key_mode: e.target.value })}
-                  className="rounded-md bg-[color:var(--bg-inset)] px-2 py-1 text-xs"
-                >
-                  <option value="byok">BYOK (sa clé)</option>
-                  <option value="platform">Plateforme</option>
-                </select>
-              </td>
-              <td className="px-4 py-3">
-                <ProviderBadges providers={u.byok_providers} color="var(--accent-primary)" />
-              </td>
-              <td className="px-4 py-3">
-                <span
-                  className={
-                    u.is_active
-                      ? "text-[color:var(--accent-success)]"
-                      : "text-[color:var(--accent-danger)]"
-                  }
-                >
-                  {u.is_active ? "actif" : "désactivé"}
-                </span>
-              </td>
-              <td className="px-4 py-3 text-right">
-                <button
-                  onClick={() => onUpdate(u, { is_active: !u.is_active })}
-                  className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:text-[color:var(--accent-primary)]"
-                  aria-label="Basculer le statut"
-                >
-                  {u.is_active ? <ShieldOff size={16} /> : <ShieldCheck size={16} />}
-                </button>
-              </td>
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={() => setShowCreate((s) => !s)} className="btn-primary">
+          <Plus size={16} /> Créer un utilisateur
+        </button>
+      </div>
+
+      {showCreate && (
+        <div className="card space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input
+              className="input"
+              placeholder="email@exemple.fr"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <input
+              className="input"
+              type="password"
+              placeholder="mot de passe (min 8)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <input
+              className="input"
+              placeholder="nom affiché"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <select className="input" value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="student">Élève (student)</option>
+              <option value="admin">Administrateur</option>
+            </select>
+          </div>
+          {error && (
+            <p className="rounded-md bg-[color:var(--accent-danger)]/10 px-3 py-2 text-sm text-[color:var(--accent-danger)]">
+              {error}
+            </p>
+          )}
+          <button
+            onClick={create}
+            disabled={busy || !email || password.length < 8}
+            className="btn-primary"
+          >
+            Créer
+          </button>
+        </div>
+      )}
+
+      <div className="card overflow-x-auto p-0">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[color:var(--border-subtle)] text-left text-xs uppercase tracking-wider text-[color:var(--text-muted)]">
+              <th className="px-4 py-3">Email</th>
+              <th className="px-4 py-3">Rôle</th>
+              <th className="px-4 py-3">Cours</th>
+              <th className="px-4 py-3">Mode clé IA</th>
+              <th className="px-4 py-3">BYOK</th>
+              <th className="px-4 py-3">Statut</th>
+              <th className="px-4 py-3 text-right">Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id} className="border-b border-[color:var(--border-subtle)]/50">
+                <td className="px-4 py-3">
+                  <div className="font-mono text-xs">{u.email}</div>
+                  <div className="text-xs text-[color:var(--text-muted)]">{u.display_name}</div>
+                </td>
+                <td className="px-4 py-3">
+                  <select
+                    value={u.role}
+                    onChange={(e) => changeRole(u, e.target.value)}
+                    className="rounded-md bg-[color:var(--bg-inset)] px-2 py-1 text-xs"
+                  >
+                    <option value="student">student</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </td>
+                <td className="px-4 py-3">{u.course_count}</td>
+                <td className="px-4 py-3">
+                  <select
+                    value={u.key_mode}
+                    onChange={(e) => onUpdate(u, { key_mode: e.target.value })}
+                    className="rounded-md bg-[color:var(--bg-inset)] px-2 py-1 text-xs"
+                  >
+                    <option value="byok">BYOK</option>
+                    <option value="platform">Plateforme</option>
+                  </select>
+                </td>
+                <td className="px-4 py-3">
+                  <ProviderBadges providers={u.byok_providers} color="var(--accent-primary)" />
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={
+                      u.is_active
+                        ? "text-[color:var(--accent-success)]"
+                        : "text-[color:var(--accent-danger)]"
+                    }
+                  >
+                    {u.is_active ? "actif" : "désactivé"}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      onClick={() => onUpdate(u, { is_active: !u.is_active })}
+                      className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:text-[color:var(--accent-primary)]"
+                      title={u.is_active ? "Désactiver" : "Activer"}
+                    >
+                      {u.is_active ? <ShieldOff size={16} /> : <ShieldCheck size={16} />}
+                    </button>
+                    <button
+                      onClick={() => forceReset(u)}
+                      className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:text-[color:var(--accent-warning)]"
+                      title="Forcer réinitialisation mot de passe"
+                    >
+                      <KeyRound size={16} />
+                    </button>
+                    <button
+                      onClick={() => remove(u)}
+                      className="rounded-md p-1.5 text-[color:var(--text-muted)] hover:text-[color:var(--accent-danger)]"
+                      title="Supprimer"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
-
 function PlatformKeysTab({ keys, onChange }: { keys: PlatformKey[]; onChange: () => void }) {
   const [provider, setProvider] = useState("openai");
   const [value, setValue] = useState("");
+  const [account, setAccount] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -321,8 +475,9 @@ function PlatformKeysTab({ keys, onChange }: { keys: PlatformKey[]; onChange: ()
     setError(null);
     setBusy(true);
     try {
-      await api.adminCreatePlatformKey(provider, value);
+      await api.adminCreatePlatformKeyFull(provider, value, account);
       setValue("");
+      setAccount("");
       onChange();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -347,7 +502,7 @@ function PlatformKeysTab({ keys, onChange }: { keys: PlatformKey[]; onChange: ()
           Ces clés sont utilisées par les utilisateurs en mode « Plateforme ». Chiffrées
           AES-256-GCM, jamais affichées en clair.
         </p>
-        <div className="grid gap-3 sm:grid-cols-[1fr_2fr_auto]">
+        <div className="grid gap-3 sm:grid-cols-2">
           <select className="input" value={provider} onChange={(e) => setProvider(e.target.value)}>
             {PROVIDERS.map((p) => (
               <option key={p.id} value={p.id}>
@@ -357,12 +512,22 @@ function PlatformKeysTab({ keys, onChange }: { keys: PlatformKey[]; onChange: ()
           </select>
           <input
             className="input"
+            value={account}
+            onChange={(e) => setAccount(e.target.value)}
+            placeholder="compte associé (ex: compte OpenAI école)"
+          />
+          <input
+            className="input sm:col-span-2"
             type="password"
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="clé API"
           />
-          <button onClick={add} disabled={busy || !value} className="btn-primary">
+          <button
+            onClick={add}
+            disabled={busy || !value}
+            className="btn-primary sm:col-span-2"
+          >
             <Plus size={16} />
             Ajouter
           </button>
@@ -387,7 +552,12 @@ function PlatformKeysTab({ keys, onChange }: { keys: PlatformKey[]; onChange: ()
                 <span className="rounded bg-[color:var(--bg-elevated)] px-2 py-0.5 text-xs font-medium uppercase text-[color:var(--accent-primary)]">
                   {k.provider}
                 </span>
-                <span className="font-mono text-sm text-[color:var(--text-secondary)]">
+                {k.account_label && (
+                  <span className="text-xs text-[color:var(--text-secondary)]">
+                    {k.account_label}
+                  </span>
+                )}
+                <span className="font-mono text-sm text-[color:var(--text-muted)]">
                   {k.key_hint}
                 </span>
                 <span className="text-xs text-[color:var(--accent-success)]">active</span>
@@ -585,7 +755,15 @@ function OnlineTab({ online }: { online: OnlineInfo | null }) {
   );
 }
 
-function AlertsTab({ alerts, onRead }: { alerts: Alert[]; onRead: (id: string) => void }) {
+function AlertsTab({
+  alerts,
+  onRead,
+  onDelete,
+}: {
+  alerts: Alert[];
+  onRead: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
   const sevColor: Record<string, string> = {
     info: "var(--accent-primary)",
     warning: "var(--accent-warning)",
@@ -623,14 +801,22 @@ function AlertsTab({ alerts, onRead }: { alerts: Alert[]; onRead: (id: string) =
               {new Date(a.created_at).toLocaleString("fr-FR")}
             </p>
           </div>
-          {!a.is_read && (
+          <div className="flex flex-col gap-1">
+            {!a.is_read && (
+              <button
+                onClick={() => onRead(a.id)}
+                className="rounded-md px-2 py-1 text-xs text-[color:var(--text-secondary)] hover:text-[color:var(--accent-primary)]"
+              >
+                Marquer lu
+              </button>
+            )}
             <button
-              onClick={() => onRead(a.id)}
-              className="rounded-md px-2 py-1 text-xs text-[color:var(--text-secondary)] hover:text-[color:var(--accent-primary)]"
+              onClick={() => onDelete(a.id)}
+              className="rounded-md px-2 py-1 text-xs text-[color:var(--text-muted)] hover:text-[color:var(--accent-danger)]"
             >
-              Marquer lu
+              Supprimer
             </button>
-          )}
+          </div>
         </div>
       ))}
     </div>
@@ -708,6 +894,165 @@ function UsageTab({ usage }: { usage: UserUsage[] }) {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function EmailsTab({
+  smtp,
+  logs,
+  onRefresh,
+}: {
+  smtp: SmtpConfig | null;
+  logs: EmailLog[];
+  onRefresh: () => void;
+}) {
+  const [host, setHost] = useState(smtp?.host ?? "");
+  const [port, setPort] = useState(String(smtp?.port ?? 587));
+  const [user, setUser] = useState(smtp?.user ?? "");
+  const [password, setPassword] = useState("");
+  const [useTls, setUseTls] = useState(smtp?.use_tls ?? true);
+  const [fromAddr, setFromAddr] = useState(smtp?.from_addr ?? "");
+  const [testTo, setTestTo] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.adminSetEmailConfig({
+        host,
+        port: Number(port),
+        user,
+        password,
+        use_tls: useTls,
+        from_addr: fromAddr,
+      });
+      setMsg("Configuration enregistrée.");
+      onRefresh();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function test() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await api.adminTestEmail(testTo);
+      setMsg(res.sent ? "Email de test envoyé." : "Échec de l'envoi (voir logs).");
+      onRefresh();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-3">
+        <div className="flex items-center gap-2 text-[color:var(--accent-primary)]">
+          <Mail size={18} />
+          <h2 className="font-display text-lg font-semibold">Configuration SMTP</h2>
+          <span
+            className={`ml-auto text-xs ${smtp?.configured ? "text-[color:var(--accent-success)]" : "text-[color:var(--text-muted)]"}`}
+          >
+            {smtp?.configured ? "configuré" : "non configuré (emails loggés)"}
+          </span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <input className="input" placeholder="hôte SMTP" value={host} onChange={(e) => setHost(e.target.value)} />
+          <input className="input" placeholder="port" value={port} onChange={(e) => setPort(e.target.value)} />
+          <input className="input" placeholder="utilisateur" value={user} onChange={(e) => setUser(e.target.value)} />
+          <input
+            className="input"
+            type="password"
+            placeholder="mot de passe (laisser vide = inchangé)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <input
+            className="input sm:col-span-2"
+            placeholder="expéditeur (ex: Revizio <no-reply@domaine>)"
+            value={fromAddr}
+            onChange={(e) => setFromAddr(e.target.value)}
+          />
+          <label className="flex items-center gap-2 text-sm text-[color:var(--text-secondary)]">
+            <input type="checkbox" checked={useTls} onChange={(e) => setUseTls(e.target.checked)} />
+            STARTTLS (port 587). Décocher pour SSL direct (port 465).
+          </label>
+        </div>
+        <button onClick={save} disabled={busy} className="btn-primary">
+          Enregistrer
+        </button>
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-display text-lg font-semibold">Tester l'envoi</h2>
+        <div className="flex gap-2">
+          <input
+            className="input"
+            placeholder="email de destination"
+            value={testTo}
+            onChange={(e) => setTestTo(e.target.value)}
+          />
+          <button onClick={test} disabled={busy || !testTo} className="btn-secondary">
+            Envoyer un test
+          </button>
+        </div>
+        {msg && <p className="text-sm text-[color:var(--accent-primary)]">{msg}</p>}
+      </div>
+
+      <div className="card overflow-x-auto p-0">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[color:var(--border-subtle)] text-left text-xs uppercase tracking-wider text-[color:var(--text-muted)]">
+              <th className="px-4 py-3">Destinataire</th>
+              <th className="px-4 py-3">Sujet</th>
+              <th className="px-4 py-3">Type</th>
+              <th className="px-4 py-3">Statut</th>
+              <th className="px-4 py-3">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-center text-[color:var(--text-muted)]">
+                  Aucun email envoyé.
+                </td>
+              </tr>
+            ) : (
+              logs.map((l) => (
+                <tr key={l.id} className="border-b border-[color:var(--border-subtle)]/50">
+                  <td className="px-4 py-3 font-mono text-xs">{l.to_email}</td>
+                  <td className="px-4 py-3">{l.subject}</td>
+                  <td className="px-4 py-3 text-xs text-[color:var(--text-muted)]">{l.template}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={
+                        l.status === "sent"
+                          ? "text-[color:var(--accent-success)]"
+                          : l.status === "failed"
+                            ? "text-[color:var(--accent-danger)]"
+                            : "text-[color:var(--text-muted)]"
+                      }
+                    >
+                      {l.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-[color:var(--text-muted)]">
+                    {new Date(l.created_at).toLocaleString("fr-FR")}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

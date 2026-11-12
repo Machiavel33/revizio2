@@ -14,18 +14,25 @@ from app.models import AuditLog, Course, Job, PlatformKey, User, UserApiKey
 from app.schemas.admin import (
     AdminJobOut,
     AdminStats,
+    AdminUserCreate,
     AdminUserOut,
+    AdminUserRoleUpdate,
     AdminUserUpdate,
     AlertOut,
     AuditLogOut,
     AuditVerifyOut,
+    EmailLogOut,
     OnlineOut,
     PlatformKeyCreate,
+    PlatformKeyCreateFull,
     PlatformKeyOut,
+    SmtpConfigIn,
+    SmtpConfigOut,
     SystemInfoOut,
+    TestEmailIn,
     UserUsageOut,
 )
-from app.services import audit, presence, system_info
+from app.services import audit, mail, presence, system_info
 from app.services import usage as usage_svc
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -326,3 +333,264 @@ async def list_usage(
             )
         )
     return result
+
+
+# --- Création / gestion complète des utilisateurs ---
+
+
+@router.post("/users", response_model=AdminUserOut, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    payload: AdminUserCreate,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AdminUserOut:
+    from app.core.security import hash_password
+
+    if payload.role not in ("student", "admin"):
+        raise HTTPException(status_code=400, detail="Rôle invalide")
+    existing = await db.scalar(select(User).where(User.email == payload.email))
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Email déjà utilisé")
+    user = User(
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        display_name=payload.display_name or payload.email.split("@")[0],
+        role=payload.role,
+    )
+    db.add(user)
+    await db.flush()
+    await audit.record(
+        db,
+        action="admin.user.create",
+        actor_id=_admin.id,
+        target=str(user.id),
+        metadata={"email": user.email, "role": user.role},
+    )
+    mail.send_welcome(user.email, user.display_name)
+    out = AdminUserOut.model_validate(user)
+    out.course_count = 0
+    out.byok_providers = []
+    out.platform_providers = await _platform_providers(db)
+    return out
+
+
+@router.patch("/users/{user_id}/role", response_model=AdminUserOut)
+async def set_user_role(
+    user_id: uuid.UUID,
+    payload: AdminUserRoleUpdate,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AdminUserOut:
+    if payload.role not in ("student", "admin"):
+        raise HTTPException(status_code=400, detail="Rôle invalide")
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    user.role = payload.role
+    await db.flush()
+    await audit.record(
+        db,
+        action="admin.user.role",
+        actor_id=_admin.id,
+        target=str(user_id),
+        metadata={"role": payload.role},
+    )
+    out = AdminUserOut.model_validate(user)
+    out.course_count = 0
+    out.byok_providers = []
+    out.platform_providers = await _platform_providers(db)
+    return out
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: uuid.UUID,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    if user_id == _admin.id:
+        raise HTTPException(status_code=400, detail="Impossible de supprimer son propre compte")
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    await db.delete(user)
+    await audit.record(db, action="admin.user.delete", actor_id=_admin.id, target=str(user_id))
+
+
+@router.post("/users/{user_id}/force-reset", status_code=status.HTTP_200_OK)
+async def force_password_reset(
+    user_id: uuid.UUID,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Envoie un lien de réinitialisation à l'utilisateur (intervention admin)."""
+    import hashlib
+    import secrets
+    from datetime import UTC, datetime, timedelta
+
+    from app.models import PasswordResetToken
+
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    token = secrets.token_urlsafe(32)
+    db.add(
+        PasswordResetToken(
+            user_id=user.id,
+            token_hash=hashlib.sha256(token.encode()).hexdigest(),
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+    )
+    await db.flush()
+    mail.send_password_reset(user.email, user.display_name, token)
+    await audit.record(db, action="admin.user.force_reset", actor_id=_admin.id, target=str(user_id))
+    return {"detail": "Lien de réinitialisation envoyé"}
+
+
+# --- Clés plateforme avec compte associé ---
+
+
+@router.post(
+    "/platform-keys/full", response_model=PlatformKeyOut, status_code=status.HTTP_201_CREATED
+)
+async def create_platform_key_full(
+    payload: PlatformKeyCreateFull,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PlatformKey:
+    from app.core.crypto import encrypt_secret, mask_secret
+
+    existing = await db.scalar(select(PlatformKey).where(PlatformKey.provider == payload.provider))
+    if existing is not None:
+        raise HTTPException(status_code=409, detail=f"Clé {payload.provider} existe déjà")
+    key = PlatformKey(
+        provider=payload.provider,
+        account_label=payload.account_label,
+        encrypted_key=encrypt_secret(payload.api_key),
+        key_hint=mask_secret(payload.api_key),
+        is_active=True,
+    )
+    db.add(key)
+    await db.flush()
+    await audit.record(
+        db,
+        action="admin.platform_key.create",
+        actor_id=_admin.id,
+        target=str(key.id),
+        metadata={"provider": payload.provider, "account": payload.account_label},
+    )
+    return key
+
+
+# --- Emails : config SMTP + logs + test ---
+
+
+async def _get_setting(db: AsyncSession, key: str) -> str | None:
+    from app.models import SystemSetting
+
+    row = await db.get(SystemSetting, key)
+    return row.value if row else None
+
+
+async def _set_setting(db: AsyncSession, key: str, value: str, is_secret: bool = False) -> None:
+    from app.models import SystemSetting
+
+    row = await db.get(SystemSetting, key)
+    if row is None:
+        db.add(SystemSetting(key=key, value=value, is_secret=is_secret))
+    else:
+        row.value = value
+        row.is_secret = is_secret
+    await db.flush()
+
+
+@router.get("/email/config", response_model=SmtpConfigOut)
+async def get_email_config(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SmtpConfigOut:
+    from app.core.config import settings
+
+    host = await _get_setting(db, "smtp_host") or settings.smtp_host
+    port = await _get_setting(db, "smtp_port") or str(settings.smtp_port)
+    user = await _get_setting(db, "smtp_user") or settings.smtp_user
+    use_tls = await _get_setting(db, "smtp_use_tls")
+    from_addr = await _get_setting(db, "smtp_from") or settings.smtp_from
+    return SmtpConfigOut(
+        host=host,
+        port=int(port),
+        user=user,
+        use_tls=(use_tls != "false") if use_tls else settings.smtp_use_tls,
+        from_addr=from_addr,
+        configured=bool(host),
+    )
+
+
+@router.put("/email/config", response_model=SmtpConfigOut)
+async def set_email_config(
+    payload: SmtpConfigIn,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SmtpConfigOut:
+    await _set_setting(db, "smtp_host", payload.host)
+    await _set_setting(db, "smtp_port", str(payload.port))
+    await _set_setting(db, "smtp_user", payload.user)
+    if payload.password:
+        await _set_setting(db, "smtp_password", payload.password, is_secret=True)
+    await _set_setting(db, "smtp_use_tls", "true" if payload.use_tls else "false")
+    await _set_setting(db, "smtp_from", payload.from_addr)
+    # Met à jour le cache mémoire pour prise en compte immédiate
+    mail.update_smtp_cache(
+        {
+            "host": payload.host,
+            "port": payload.port,
+            "user": payload.user,
+            "password": payload.password,
+            "use_tls": payload.use_tls,
+            "from": payload.from_addr,
+        }
+    )
+    await audit.record(db, action="admin.email.config", actor_id=_admin.id, target="smtp")
+    return SmtpConfigOut(
+        host=payload.host,
+        port=payload.port,
+        user=payload.user,
+        use_tls=payload.use_tls,
+        from_addr=payload.from_addr,
+        configured=bool(payload.host),
+    )
+
+
+@router.post("/email/test", status_code=status.HTTP_200_OK)
+async def test_email(
+    payload: TestEmailIn,
+    _admin: AdminUser,
+) -> dict:
+    ok = mail.send_test(payload.to)
+    return {"sent": ok}
+
+
+@router.get("/email/logs", response_model=list[EmailLogOut])
+async def email_logs(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list:
+    from app.models import EmailLog
+
+    return list(await db.scalars(select(EmailLog).order_by(EmailLog.created_at.desc()).limit(200)))
+
+
+# --- Suppression d'alerte ---
+
+
+@router.delete("/alerts/{alert_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_alert(
+    alert_id: uuid.UUID,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    from app.models import Alert
+
+    alert = await db.get(Alert, alert_id)
+    if alert is not None:
+        await db.delete(alert)

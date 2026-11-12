@@ -105,6 +105,7 @@ export interface AdminUser extends User {
 export interface PlatformKey {
   id: string;
   provider: string;
+  account_label: string;
   key_hint: string;
   is_active: boolean;
   created_at: string;
@@ -194,4 +195,23 @@ export interface UserUsage {
   quota_audio_minutes: number;
   quota_sheet_count: number;
   abuse_flags: string[];
+}
+
+// --- Admin complet ---
+export interface EmailLog {
+  id: string;
+  to_email: string;
+  subject: string;
+  template: string;
+  status: string;
+  error: string | null;
+  created_at: string;
+}
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  user: string;
+  use_tls: boolean;
+  from_addr: string;
+  configured: boolean;
 }

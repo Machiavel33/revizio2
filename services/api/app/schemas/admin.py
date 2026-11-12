@@ -148,3 +148,54 @@ class UserUsageOut(BaseModel):
     quota_audio_minutes: int
     quota_sheet_count: int
     abuse_flags: list[str] = []
+
+
+class AdminUserCreate(BaseModel):
+    email: str
+    password: str
+    display_name: str = ""
+    role: str = "student"
+
+
+class AdminUserRoleUpdate(BaseModel):
+    role: str
+
+
+class PlatformKeyCreateFull(BaseModel):
+    provider: str
+    api_key: str
+    account_label: str = ""
+
+
+class EmailLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    to_email: str
+    subject: str
+    template: str
+    status: str
+    error: str | None
+    created_at: datetime
+
+
+class SmtpConfigIn(BaseModel):
+    host: str = ""
+    port: int = 587
+    user: str = ""
+    password: str = ""
+    use_tls: bool = True
+    from_addr: str = ""
+
+
+class SmtpConfigOut(BaseModel):
+    host: str
+    port: int
+    user: str
+    use_tls: bool
+    from_addr: str
+    configured: bool
+
+
+class TestEmailIn(BaseModel):
+    to: str

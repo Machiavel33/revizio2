@@ -85,6 +85,8 @@ class PlatformKey(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    # Compte associé à la clé (ex: "compte OpenAI de l'école", email du compte)
+    account_label: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     encrypted_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     key_hint: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -273,3 +275,30 @@ class PasswordResetToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class EmailLog(Base):
+    """Historique des emails envoyés (traçabilité admin)."""
+
+    __tablename__ = "email_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    to_email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    template: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="sent")  # sent|failed
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class SystemSetting(Base):
+    """Réglages système modifiables par l'admin (clé/valeur, secrets chiffrés)."""
+
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_secret: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )

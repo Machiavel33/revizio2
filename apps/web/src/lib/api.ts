@@ -9,9 +9,11 @@ import type {
   CourseDetail,
   Alert,
   DownloadItem,
+  EmailLog,
   KeyMode,
   OnlineInfo,
   PlatformKey,
+  SmtpConfig,
   SystemInfo,
   TokenPair,
   User,
@@ -175,6 +177,54 @@ export const api = {
   adminMarkAlertRead: (id: string) =>
     request<void>(`/api/admin/alerts/${id}/read`, { method: "POST" }),
   adminUsage: () => request<UserUsage[]>("/api/admin/usage"),
+
+  // Admin complet : users CRUD
+  adminCreateUser: (email: string, password: string, display_name: string, role: string) =>
+    request<AdminUser>("/api/admin/users", {
+      method: "POST",
+      body: JSON.stringify({ email, password, display_name, role }),
+    }),
+  adminSetRole: (id: string, role: string) =>
+    request<AdminUser>(`/api/admin/users/${id}/role`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    }),
+  adminDeleteUser: (id: string) =>
+    request<void>(`/api/admin/users/${id}`, { method: "DELETE" }),
+  adminForceReset: (id: string) =>
+    request<{ detail: string }>(`/api/admin/users/${id}/force-reset`, { method: "POST" }),
+
+  // Clé plateforme avec compte
+  adminCreatePlatformKeyFull: (provider: string, api_key: string, account_label: string) =>
+    request<PlatformKey>("/api/admin/platform-keys/full", {
+      method: "POST",
+      body: JSON.stringify({ provider, api_key, account_label }),
+    }),
+
+  // Emails
+  adminEmailConfig: () => request<SmtpConfig>("/api/admin/email/config"),
+  adminSetEmailConfig: (cfg: {
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    use_tls: boolean;
+    from_addr: string;
+  }) =>
+    request<SmtpConfig>("/api/admin/email/config", {
+      method: "PUT",
+      body: JSON.stringify(cfg),
+    }),
+  adminTestEmail: (to: string) =>
+    request<{ sent: boolean }>("/api/admin/email/test", {
+      method: "POST",
+      body: JSON.stringify({ to }),
+    }),
+  adminEmailLogs: () => request<EmailLog[]>("/api/admin/email/logs"),
+
+  // Alertes
+  adminDeleteAlert: (id: string) =>
+    request<void>(`/api/admin/alerts/${id}`, { method: "DELETE" }),
 
   // Mot de passe oublié
   forgotPassword: (email: string) =>

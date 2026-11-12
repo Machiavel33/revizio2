@@ -1,10 +1,9 @@
 # ruff: noqa: E501  (templates HTML longs volontaires)
-"""Service d'envoi d'emails transactionnels (SMTP configurable).
+"""Service d'envoi d'emails transactionnels.
 
-# ruff: noqa: E501  (templates HTML longs volontaires)
-
-Si SMTP n'est pas configuré (smtp_host vide), les emails sont loggés au lieu
-d'être envoyés — pratique en dev. En prod, configurer SMTP_HOST/USER/PASSWORD.
+Config SMTP : lue depuis la table system_settings (modifiable par l'admin),
+avec fallback sur les variables d'environnement. Chaque envoi est journalisé
+dans email_logs (traçabilité admin).
 """
 
 import logging
@@ -16,35 +15,91 @@ from app.core.config import settings
 logger = logging.getLogger("revizio.mail")
 
 
-def _send(to: str, subject: str, html: str, text: str = "") -> bool:
-    """Envoie un email. Retourne True si envoyé (ou loggé en dev)."""
-    if not settings.smtp_host:
-        logger.info("[MAIL-DEV] to=%s subject=%s\n%s", to, subject, text or html)
+# Cache de config SMTP (surchargé par l'admin via update_smtp_cache)
+_smtp_override: dict = {}
+
+
+def update_smtp_cache(cfg: dict) -> None:
+    """Met à jour la config SMTP en mémoire (appelé par l'endpoint admin)."""
+    _smtp_override.update(cfg)
+
+
+def _smtp_config() -> dict:
+    """Config SMTP effective (env par défaut ; surchargée par l'admin si présente)."""
+    base = {
+        "host": settings.smtp_host,
+        "port": settings.smtp_port,
+        "user": settings.smtp_user,
+        "password": settings.smtp_password,
+        "use_tls": settings.smtp_use_tls,
+        "from": settings.smtp_from,
+    }
+    base.update({k: v for k, v in _smtp_override.items() if v not in (None, "")})
+    return base
+
+
+def _send(to: str, subject: str, html: str, text: str = "", template: str = "") -> bool:
+    cfg = _smtp_config()
+    if not cfg["host"]:
+        logger.info("[MAIL-DEV] to=%s subject=%s", to, subject)
+        _log(to, subject, template, "logged", None)
         return True
 
     msg = EmailMessage()
-    msg["From"] = settings.smtp_from
+    msg["From"] = cfg["from"]
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(text or _strip_html(html))
     msg.add_alternative(html, subtype="html")
 
     try:
-        if settings.smtp_use_tls:
-            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
+        if cfg["use_tls"]:
+            with smtplib.SMTP(cfg["host"], cfg["port"], timeout=15) as server:
                 server.starttls()
-                if settings.smtp_user:
-                    server.login(settings.smtp_user, settings.smtp_password)
+                if cfg["user"]:
+                    server.login(cfg["user"], cfg["password"])
                 server.send_message(msg)
         else:
-            with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=15) as server:
-                if settings.smtp_user:
-                    server.login(settings.smtp_user, settings.smtp_password)
+            with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15) as server:
+                if cfg["user"]:
+                    server.login(cfg["user"], cfg["password"])
                 server.send_message(msg)
+        _log(to, subject, template, "sent", None)
         return True
     except Exception as exc:  # noqa: BLE001
         logger.error("Échec envoi email à %s: %s", to, exc)
+        _log(to, subject, template, "failed", str(exc)[:300])
         return False
+
+
+def _log(to: str, subject: str, template: str, status: str, error: str | None) -> None:
+    """Journalise l'envoi (best-effort, ne bloque jamais)."""
+    try:
+        import asyncio
+
+        from app.core.database import AsyncSessionLocal
+        from app.models import EmailLog
+
+        async def _write():
+            async with AsyncSessionLocal() as db:
+                db.add(
+                    EmailLog(
+                        to_email=to,
+                        subject=subject,
+                        template=template,
+                        status=status,
+                        error=error,
+                    )
+                )
+                await db.commit()
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_write())
+        except RuntimeError:
+            asyncio.run(_write())
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _strip_html(html: str) -> str:
@@ -72,9 +127,6 @@ def _layout(title: str, body: str, cta_url: str | None = None, cta_label: str = 
 </div></body></html>"""
 
 
-# --- Templates ---
-
-
 def send_welcome(to: str, name: str) -> bool:
     body = f"""<p>Bonjour {name},</p>
 <p>Bienvenue sur Revizio ! Votre compte est créé.</p>
@@ -84,6 +136,7 @@ avec vos identifiants.</p>"""
         to,
         "Bienvenue sur Revizio",
         _layout("Bienvenue !", body, f"{settings.frontend_url}/download", "Télécharger l'app"),
+        template="welcome",
     )
 
 
@@ -96,19 +149,20 @@ def send_password_reset(to: str, name: str, token: str) -> bool:
         to,
         "Réinitialisation de votre mot de passe",
         _layout("Mot de passe oublié", body, url, "Réinitialiser mon mot de passe"),
+        template="password_reset",
     )
 
 
 def send_quota_alert(to: str, name: str, used: str, quota: str) -> bool:
     body = f"""<p>Bonjour {name},</p>
-<p>Vous avez atteint <strong>{used}</strong> sur un quota de <strong>{quota}</strong> ce mois-ci.</p>
-<p>Pensez à vérifier votre consommation ou à passer en mode « vos propres clés » (BYOK).</p>"""
+<p>Vous avez atteint <strong>{used}</strong> sur un quota de <strong>{quota}</strong> ce mois-ci.</p>"""
     return _send(
         to,
         "Alerte quota Revizio",
         _layout(
             "Quota bientôt atteint", body, f"{settings.frontend_url}/settings", "Voir mes réglages"
         ),
+        template="quota_alert",
     )
 
 
@@ -119,6 +173,7 @@ pour le provider <strong>{provider}</strong>.</p>"""
         admin_email,
         "Revizio — demande de clé",
         _layout("Demande de clé", body, f"{settings.frontend_url}/admin", "Ouvrir l'admin"),
+        template="key_request",
     )
 
 
@@ -129,4 +184,15 @@ def send_abuse_alert(admin_email: str, user_email: str, reason: str) -> bool:
         admin_email,
         "Revizio — alerte usage anormal",
         _layout("Usage anormal détecté", body, f"{settings.frontend_url}/admin", "Voir l'admin"),
+        template="abuse_alert",
+    )
+
+
+def send_test(to: str) -> bool:
+    body = "<p>Ceci est un email de test envoyé depuis l'administration Revizio.</p>"
+    return _send(
+        to,
+        "Revizio — test SMTP",
+        _layout("Test SMTP", body),
+        template="test",
     )
