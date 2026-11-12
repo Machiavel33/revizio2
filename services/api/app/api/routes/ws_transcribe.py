@@ -152,6 +152,91 @@ async def _run_cloud(
     )
 
 
+async def _run_resilient(
+    websocket: WebSocket,
+    course_id: uuid.UUID | None,
+    language: str,
+) -> None:
+    """Mode protocole résilient : trames numérotées → fragments 10s → ACK après commit.
+
+    Le client garde les trames non acquittées et les réémet après reconnexion.
+    Chaque fragment validé (SHA-256) est transcrit (Whisper local) et persisté,
+    puis acquitté. L'idempotence est garantie par chunk_seq : un fragment déjà
+    traité est ré-acquitté sans retraitement.
+    """
+    from app.transport import (
+        ChunkAssembler,
+        ChunkEnd,
+        ProtocolError,
+        decode_frame,
+        session_ready_message,
+    )
+
+    await websocket.send_json(session_ready_message(live_admission=True))
+
+    assembler = ChunkAssembler()
+    processed: set[int] = set()
+
+    async def transcribe_and_persist(pcm: bytes) -> str:
+        from app.services import whisper_local
+
+        text = await asyncio.to_thread(whisper_local.transcribe_pcm16, pcm, language)
+        if text and course_id is not None:
+            await _append_final_segment(course_id, text)
+        return text
+
+    while True:
+        message = await websocket.receive()
+        if message.get("type") == "websocket.disconnect":
+            return
+        if message.get("bytes") is not None:
+            try:
+                frame = decode_frame(message["bytes"])
+                assembler.add(frame)
+            except ProtocolError as exc:
+                await websocket.send_json(exc.to_message())
+                if exc.fatal:
+                    return
+            continue
+        if message.get("text"):
+            try:
+                ctrl = json.loads(message["text"])
+            except json.JSONDecodeError:
+                continue
+            if ctrl.get("type") == "stop":
+                return
+            if ctrl.get("type") == "chunk_end":
+                try:
+                    end = ChunkEnd.model_validate(ctrl)
+                except Exception:  # noqa: BLE001
+                    await websocket.send_json(
+                        {"type": "error", "code": "invalid_frame", "detail": "chunk_end invalide"}
+                    )
+                    continue
+                # Idempotence : fragment déjà traité → ré-ACK sans retraitement
+                if end.chunk_seq in processed:
+                    await websocket.send_json(
+                        {"type": "chunk_ack", "chunk_seq": end.chunk_seq, "duplicate": True}
+                    )
+                    continue
+                try:
+                    chunk = assembler.take(end)
+                except ProtocolError as exc:
+                    await websocket.send_json(exc.to_message())
+                    continue
+                text = await transcribe_and_persist(chunk.pcm)
+                processed.add(end.chunk_seq)
+                # ACK APRÈS persistance (pas d'ACK prématuré)
+                await websocket.send_json(
+                    {
+                        "type": "chunk_ack",
+                        "chunk_seq": end.chunk_seq,
+                        "text": text,
+                        "sha256": chunk.sha256,
+                    }
+                )
+
+
 @router.websocket("/ws/transcribe")
 async def ws_transcribe(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -184,6 +269,11 @@ async def ws_transcribe(websocket: WebSocket) -> None:
 
     user_id, _course = auth
     language = init.get("language", "fr")
+
+    # Mode protocole résilient (trames numérotées + ACK après commit)
+    if init.get("protocol") == "rvzf-v1":
+        await _run_resilient(websocket, course_id, language)
+        return
 
     # Choix du moteur
     engine = settings.transcribe_engine
