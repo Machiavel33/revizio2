@@ -26,6 +26,7 @@ export interface Course {
   id: string;
   title: string;
   subject: string | null;
+  tags: string[];
   language: string;
   status: CourseStatus;
   audio_url: string | null;

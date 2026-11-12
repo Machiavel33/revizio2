@@ -126,6 +126,11 @@ export const api = {
 
   listCourses: () => request<Course[]>("/api/courses"),
   getCourse: (id: string) => request<CourseDetail>(`/api/courses/${id}`),
+  updateCourse: (id: string, patch: { title?: string; subject?: string | null; tags?: string[] }) =>
+    request<Course>(`/api/courses/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
   deleteCourse: (id: string) => request<void>(`/api/courses/${id}`, { method: "DELETE" }),
 
   // 2FA

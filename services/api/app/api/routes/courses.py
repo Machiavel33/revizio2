@@ -60,6 +60,7 @@ async def create_course(
         user_id=user.id,
         title=payload.title,
         subject=payload.subject,
+        tags=payload.tags,
         language=payload.language,
         status="recording",
     )
