@@ -1,0 +1,15 @@
+{
+  "label": "cap-24-base",
+  "sessions": 24,
+  "seconds_per_session": 30.0,
+  "wall_s": 270.3,
+  "connected": 24,
+  "chunks_sent": 72,
+  "acks": 69,
+  "ack_loss": 3,
+  "ack_p50_ms": 11466.3,
+  "ack_p95_ms": 26336.8,
+  "ack_max_ms": 29950.3,
+  "errors": 0,
+  "error_samples": []
+}

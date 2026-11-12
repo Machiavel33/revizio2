@@ -1,0 +1,15 @@
+{
+  "label": "cap-16-tuned",
+  "sessions": 16,
+  "seconds_per_session": 30.0,
+  "wall_s": 210.2,
+  "connected": 16,
+  "chunks_sent": 48,
+  "acks": 30,
+  "ack_loss": 18,
+  "ack_p50_ms": 27446.5,
+  "ack_p95_ms": 55121.5,
+  "ack_max_ms": 55327.6,
+  "errors": 0,
+  "error_samples": []
+}

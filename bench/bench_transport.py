@@ -225,12 +225,15 @@ async def main() -> None:
     base_ws = base.replace("http://", "ws://").replace("https://", "wss://")
     a.out.mkdir(parents=True, exist_ok=True)
 
-    # Un compte + cours par séance (isolation)
+    # Un compte + cours par séance (isolation).
+    # Le rate-limiter auth (20/min) impose une cadence : on espace les inscriptions.
     creds = []
     for i in range(a.sessions):
         email = f"bench_{a.label}_{i}_{int(time.time())}@example.com"
         tok, cid = await register_and_course(base, email, "BenchPass123!")
         creds.append((tok, cid))
+        if i < a.sessions - 1:
+            await asyncio.sleep(3.2)  # ~19/min, sous la limite de 20/min
 
     pcm = synth_pcm(a.seconds + 2)
     stats_list = [Stats() for _ in range(a.sessions)]

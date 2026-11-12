@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     whisper_model: str = "small"  # tiny|base|small|medium|large-v3
     whisper_device: str = "cpu"  # cpu|cuda
     whisper_compute_type: str = "int8"  # int8|float16|float32
+    # Threads CPU par transcription (0 = auto). Fixer évite que N transcriptions
+    # se disputent tous les cœurs (mesuré : docs/BENCHMARK.md).
+    whisper_cpu_threads: int = 4
+    # Nombre max de transcriptions simultanées (sémaphore). Au-delà, les appels
+    # attendent leur tour au lieu de saturer le CPU et perdre des ACK.
+    whisper_max_concurrency: int = 2
 
     # --- RGPD : rétention audio ---
     # Supprime l'audio brut après transcription réussie (donnée personnelle).

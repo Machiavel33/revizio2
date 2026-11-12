@@ -61,6 +61,8 @@ services:
       DOWNLOADS_DIR: /data/downloads
       TRANSCRIBE_ENGINE: ${TRANSCRIBE_ENGINE:-local}
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_CPU_THREADS: ${WHISPER_CPU_THREADS:-4}
+      WHISPER_MAX_CONCURRENCY: ${WHISPER_MAX_CONCURRENCY:-2}
       HF_HOME: /data/whisper
       CORS_ORIGINS: ${CORS_ORIGINS:-https://revizio.darkops.fr}
     ports:
@@ -96,6 +98,8 @@ services:
       LOCAL_STORAGE_DIR: /data/audio
       TRANSCRIBE_ENGINE: ${TRANSCRIBE_ENGINE:-local}
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_CPU_THREADS: ${WHISPER_CPU_THREADS:-4}
+      WHISPER_MAX_CONCURRENCY: ${WHISPER_MAX_CONCURRENCY:-2}
       HF_HOME: /data/whisper
     volumes:
       - audio_data:/data/audio

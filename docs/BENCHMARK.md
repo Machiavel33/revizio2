@@ -97,16 +97,51 @@ STT, pas dans le transport.
 
 ---
 
-## 6. Recommandations
+## 6. Optimisation appliquée : concurrence bornée + threads CPU
 
-1. **Court terme (sans changer d'architecture)** : plafonner à **8 séances simultanées**
-   par instance API, ou passer `WHISPER_MODEL=base` (plus rapide, qualité moindre) pour
-   monter la capacité.
-2. **Moyen terme** : **découpler le STT de l'API** (service dédié, plusieurs workers) —
+Suite au diagnostic (Whisper sérialise et sature), deux réglages ont été ajoutés
+(`app/services/whisper_local.py`, `app/core/config.py`) :
+
+- **`WHISPER_MAX_CONCURRENCY`** (défaut 2) : sémaphore bornant les transcriptions
+  simultanées. Au-delà, les appels attendent leur tour au lieu de saturer le CPU.
+- **`WHISPER_CPU_THREADS`** (défaut 4) : threads CPU par transcription, pour éviter
+  que N transcriptions se disputent les 12 cœurs.
+
+### Effet mesuré (modèle `small`)
+
+| Séances | Avant (sans borne) | Après (conc=2, threads=4) |
+|---|---|---|
+| 8 | 0 perte, p95 27,5 s | **0 perte**, p95 32,0 s |
+| 16 | **30 pertes** / 48 | **18 pertes** / 48 (−40 %) |
+
+La borne **réduit les pertes de 40 % à 16 séances** sans dégrader la capacité fiable
+(8 séances). Elle protège aussi l'API : plus d'explosion de latence ni d'exceptions.
+
+## 7. Levier de capacité : choix du modèle
+
+Le vrai levier n'est pas le transport mais le **modèle STT**. Comparaison à 16 séances :
+
+| Modèle | Pertes / 48 | ACK p95 | Capacité fiable |
+|---|---|---|---|
+| `small` (défaut, qualité) | 18 | 55 s | ~8 séances |
+| **`base`** (2-3× plus rapide) | **0** | **12,6 s** | **~16-20 séances** |
+
+À 24 séances avec `base` : 3 pertes / 72 (p95 26 s) — proche du plafond.
+
+**Compromis** : `small` = qualité « très bonne » (recommandé pour les fiches) ;
+`base` = « erreurs mots » mais **2× la capacité**. Le choix se fait par
+`WHISPER_MODEL` sans changer de code.
+
+## 8. Recommandations
+
+1. **Immédiat (fait)** : concurrence bornée + threads CPU → −40 % de pertes à 16 séances.
+2. **Capacité** : garder `small` (qualité) et plafonner à **8 séances/instance**, ou
+   passer `base` pour **~16-20 séances** si la capacité prime sur la qualité.
+3. **Moyen terme** : **découpler le STT de l'API** (service dédié, plusieurs workers) —
    c'est exactement ce que recommande le rapport Lot 0 de `revizio`.
-3. **Long terme** : évaluer **sherpa-onnx streaming** pour le vrai temps réel
+4. **Long terme** : évaluer **sherpa-onnx streaming** pour le vrai temps réel
    (latence sub-seconde, parallélisable), comme dans `revizio`.
-4. **Toujours** : garder le transport RVZF v1 (il tient) et le correctif de robustesse
+5. **Toujours** : garder le transport RVZF v1 (il tient) et le correctif de robustesse
    sur l'ACK.
 
 ---
