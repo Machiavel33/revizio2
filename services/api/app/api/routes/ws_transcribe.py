@@ -19,7 +19,6 @@ Protocole serveur -> client :
   - {"type":"error","message":"..."}
 """
 
-import asyncio
 import json
 import uuid
 from datetime import UTC, datetime
@@ -86,7 +85,7 @@ async def _run_local(
     audio_source,
 ) -> None:
     """Pseudo-live : accumule le PCM16, transcrit par fenêtres de ~4s."""
-    from app.services import whisper_local
+    from app.services import stt_client
 
     buffer = bytearray()
     window_bytes = LOCAL_WINDOW_SECONDS * PCM16_BYTES_PER_SEC
@@ -98,7 +97,7 @@ async def _run_local(
         pcm = bytes(buffer)
         buffer.clear()
         try:
-            text = await asyncio.to_thread(whisper_local.transcribe_pcm16, pcm, language)
+            text = await stt_client.transcribe_pcm16(pcm, language)
         except Exception as exc:  # noqa: BLE001
             await websocket.send_json({"type": "error", "message": str(exc)})
             continue
@@ -110,7 +109,7 @@ async def _run_local(
     # Traite le reste
     if buffer:
         try:
-            text = await asyncio.to_thread(whisper_local.transcribe_pcm16, bytes(buffer), language)
+            text = await stt_client.transcribe_pcm16(bytes(buffer), language)
             if text:
                 await websocket.send_json({"type": "final", "text": text})
                 if course_id is not None:
@@ -178,9 +177,9 @@ async def _run_resilient(
     processed: set[int] = set()
 
     async def transcribe_and_persist(pcm: bytes) -> str:
-        from app.services import whisper_local
+        from app.services import stt_client
 
-        text = await asyncio.to_thread(whisper_local.transcribe_pcm16, pcm, language)
+        text = await stt_client.transcribe_pcm16(pcm, language)
         if text and course_id is not None:
             await _append_final_segment(course_id, text)
         return text

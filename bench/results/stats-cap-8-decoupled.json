@@ -1,0 +1,15 @@
+{
+  "label": "cap-8-decoupled",
+  "sessions": 8,
+  "seconds_per_session": 30.0,
+  "wall_s": 120.1,
+  "connected": 8,
+  "chunks_sent": 24,
+  "acks": 24,
+  "ack_loss": 0,
+  "ack_p50_ms": 27776.8,
+  "ack_p95_ms": 43070.3,
+  "ack_max_ms": 43561.5,
+  "errors": 0,
+  "error_samples": []
+}

@@ -156,3 +156,48 @@ docker exec revizio-api python /tmp/bench_transport.py \
 ```
 
 Résultats bruts : `bench/results/stats-*.json`.
+
+---
+
+## 9. Découplage du STT (service dédié) — résultats
+
+Le STT a été extrait dans un **service dédié** (`services/stt/`) : faster-whisper batch
++ sherpa-onnx streaming, isolé de l'API. L'API délègue via HTTP (`STT_SERVICE_URL`).
+
+### Gain principal : l'API reste réactive sous charge
+
+| Métrique (8 séances) | Avant (STT dans l'API) | Après (STT découplé) |
+|---|---|---|
+| CPU API pendant charge | **350-616 %** | **5 %** |
+| Latence `/health` pendant charge | secondes | **4-8 ms** |
+| CPU STT pendant charge | — | 55 % (le calcul) |
+
+**C'est le vrai bénéfice** : la transcription ne bloque plus les requêtes HTTP/WS.
+L'API peut servir les autres endpoints pendant qu'un cours est transcrit.
+
+### Capacité brute : inchangée (CPU-bound)
+
+| Config | 8 séances | 16 séances |
+|---|---|---|
+| STT découplé, `small`, conc=2 | **0 perte** | 34 pertes |
+| STT découplé, `base`, conc=2 | — | 44 pertes |
+
+Le découplage **ne change pas le débit brut** : Whisper `small` sur CPU reste le
+facteur limitant (48 fragments de 10 s = ~8 min de calcul pour 30 s d'audio). Le
+découplage apporte la **réactivité** et la **scalabilité horizontale** (on peut lancer
+plusieurs réplicas STT), pas un gain de vitesse par instance.
+
+### Streaming temps réel (sherpa-onnx)
+
+Le service STT expose `WS /stream` (sherpa-onnx zipformer FR, Apache-2.0) : vrai
+temps réel, partial/final sub-seconde, un flux par séance. Modèle téléchargé et
+vérifié par SHA-256 (`scripts/fetch-sherpa-model.sh`). Validé : connexion, `ready`,
+traitement des trames, événements partial/final.
+
+### Recommandation
+
+- **Production actuelle** : `small`, conc=2, pool=1 → **8 séances fiables**, API réactive.
+- **Montée en charge** : ajouter des réplicas du service `stt` (scalabilité horizontale)
+  ou passer `base` pour ~16-20 séances.
+- **Temps réel** : brancher le client desktop sur `WS /stream` (sherpa) pour le direct
+  sub-seconde, au lieu du pseudo-live par fenêtres.

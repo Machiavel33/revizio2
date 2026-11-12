@@ -1,0 +1,15 @@
+{
+  "label": "cap-16-decoupled",
+  "sessions": 16,
+  "seconds_per_session": 30.0,
+  "wall_s": 210.3,
+  "connected": 16,
+  "chunks_sent": 48,
+  "acks": 14,
+  "ack_loss": 34,
+  "ack_p50_ms": 21088.7,
+  "ack_p95_ms": 50377.5,
+  "ack_max_ms": 50847.7,
+  "errors": 0,
+  "error_samples": []
+}

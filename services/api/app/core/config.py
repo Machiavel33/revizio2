@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     # Nombre max de transcriptions simultanées (sémaphore). Au-delà, les appels
     # attendent leur tour au lieu de saturer le CPU et perdre des ACK.
     whisper_max_concurrency: int = 2
+    # --- Service STT découplé (recommandé) ---
+    # Si stt_service_url est défini, l'API délègue la transcription au service STT
+    # (faster-whisper batch + sherpa-onnx streaming) au lieu de charger le modèle
+    # localement. Vide = transcription locale dans le processus API (legacy).
+    stt_service_url: str = ""
+    stt_service_timeout: int = 300
 
     # --- RGPD : rétention audio ---
     # Supprime l'audio brut après transcription réussie (donnée personnelle).

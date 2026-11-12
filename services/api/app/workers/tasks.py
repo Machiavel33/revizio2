@@ -114,11 +114,9 @@ async def _run_transcribe(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
 
             if engine in ("auto", "local"):
                 try:
-                    from app.services import whisper_local
+                    from app.services import stt_client
 
-                    result = await asyncio.to_thread(
-                        whisper_local.transcribe_bytes, audio, course.language
-                    )
+                    result = await stt_client.transcribe_bytes(audio, course.language)
                     provider = "local"
                     key_source = "local"
                 except Exception as exc:  # noqa: BLE001

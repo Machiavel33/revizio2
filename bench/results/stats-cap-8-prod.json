@@ -1,0 +1,15 @@
+{
+  "label": "cap-8-prod",
+  "sessions": 8,
+  "seconds_per_session": 30.0,
+  "wall_s": 150.1,
+  "connected": 8,
+  "chunks_sent": 24,
+  "acks": 24,
+  "ack_loss": 0,
+  "ack_p50_ms": 23759.8,
+  "ack_p95_ms": 36924.4,
+  "ack_max_ms": 37394.3,
+  "errors": 0,
+  "error_samples": []
+}

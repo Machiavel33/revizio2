@@ -47,6 +47,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      stt:
+        condition: service_started
     environment:
       APP_ENV: production
       DEBUG: "false"
@@ -63,6 +65,8 @@ services:
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
       WHISPER_CPU_THREADS: ${WHISPER_CPU_THREADS:-4}
       WHISPER_MAX_CONCURRENCY: ${WHISPER_MAX_CONCURRENCY:-2}
+      # Service STT découplé (vide = transcription locale legacy)
+      STT_SERVICE_URL: ${STT_SERVICE_URL:-http://stt:8100}
       HF_HOME: /data/whisper
       CORS_ORIGINS: ${CORS_ORIGINS:-https://revizio.darkops.fr}
     ports:
@@ -85,6 +89,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      stt:
+        condition: service_started
     environment:
       APP_ENV: production
       DEBUG: "false"
@@ -100,6 +106,7 @@ services:
       WHISPER_MODEL: ${WHISPER_MODEL:-small}
       WHISPER_CPU_THREADS: ${WHISPER_CPU_THREADS:-4}
       WHISPER_MAX_CONCURRENCY: ${WHISPER_MAX_CONCURRENCY:-2}
+      STT_SERVICE_URL: ${STT_SERVICE_URL:-http://stt:8100}
       HF_HOME: /data/whisper
     volumes:
       - audio_data:/data/audio
@@ -115,6 +122,37 @@ services:
       start_period: 40s
       retries: 3
     command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=1
+
+  # Service STT découplé : faster-whisper batch + sherpa-onnx streaming.
+  # Isolé de l'API pour que la transcription ne bloque jamais les requêtes HTTP/WS.
+  stt:
+    build:
+      context: ../services/stt
+      dockerfile: Dockerfile
+    container_name: revizio-stt
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_CPU_THREADS: ${WHISPER_CPU_THREADS:-4}
+      WHISPER_MAX_CONCURRENCY: ${WHISPER_MAX_CONCURRENCY:-2}
+      WHISPER_POOL_SIZE: ${WHISPER_POOL_SIZE:-1}
+      SHERPA_ENABLED: ${SHERPA_ENABLED:-true}
+      SHERPA_MODEL_DIR: /data/models/sherpa-onnx-streaming-zipformer-fr-2023-04-14
+      HF_HOME: /data/whisper
+    volumes:
+      - whisper_cache:/data/whisper
+      - stt_models:/data/models
+    # Pas de port publié : accessible uniquement sur le réseau interne (api/worker).
+    expose:
+      - "8100"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8100/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
 
   web:
     build:
@@ -132,3 +170,4 @@ volumes:
   redisdata:
   audio_data:
   whisper_cache:
+  stt_models:
