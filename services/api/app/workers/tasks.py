@@ -56,17 +56,21 @@ async def _get_platform_key(db, provider: str) -> str | None:
     return decrypt_secret(key.encrypted_key)
 
 
-async def _resolve_key(db, user_id: uuid.UUID, provider: str) -> str | None:
-    """Résout la clé selon le mode de l'utilisateur (byok | platform).
-
-    - mode "platform" : clé plateforme, fallback sur la clé perso si absente.
-    - mode "byok" : clé perso, fallback sur la clé plateforme si absente.
-    """
+async def _resolve_key(db, user_id: uuid.UUID, provider: str) -> tuple[str | None, str]:
+    """Résout la clé selon le mode de l'utilisateur. Retourne (clé, source)."""
     user = await db.get(User, user_id)
     mode = user.key_mode if user else "byok"
     if mode == "platform":
-        return await _get_platform_key(db, provider) or await _get_user_key(db, user_id, provider)
-    return await _get_user_key(db, user_id, provider) or await _get_platform_key(db, provider)
+        pk = await _get_platform_key(db, provider)
+        if pk:
+            return pk, "platform"
+        uk = await _get_user_key(db, user_id, provider)
+        return (uk, "byok") if uk else (None, "")
+    uk = await _get_user_key(db, user_id, provider)
+    if uk:
+        return uk, "byok"
+    pk = await _get_platform_key(db, provider)
+    return (pk, "platform") if pk else (None, "")
 
 
 async def _download_audio(audio_url: str) -> bytes:
@@ -97,10 +101,10 @@ async def _run_transcribe(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
 
             # Provider de transcription : deepgram si dispo, sinon openai
             provider = "deepgram"
-            api_key = await _resolve_key(db, course.user_id, "deepgram")
+            api_key, key_source = await _resolve_key(db, course.user_id, "deepgram")
             if api_key is None:
                 provider = "openai"
-                api_key = await _resolve_key(db, course.user_id, "openai")
+                api_key, key_source = await _resolve_key(db, course.user_id, "openai")
             if api_key is None:
                 raise ValueError("Aucune clé API de transcription configurée")
 
@@ -119,6 +123,21 @@ async def _run_transcribe(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
             transcript.segments = result["segments"]
             transcript.provider = provider
             transcript.model = result["model"]
+
+            from app.services import usage as usage_svc
+
+            await usage_svc.record_usage(
+                db,
+                user_id=course.user_id,
+                course_id=course_id,
+                kind="transcribe",
+                provider=provider,
+                key_source=key_source,
+                audio_seconds=float(course.duration_sec or 0),
+            )
+            user_obj = await db.get(User, course.user_id)
+            if user_obj is not None:
+                await usage_svc.maybe_alert_quota(db, user_obj)
 
             course.status = "generating"
             job.status = "done"
@@ -149,12 +168,12 @@ async def _run_generate_sheet(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
                 raise ValueError("Transcription absente ou vide")
 
             provider = "anthropic"
-            api_key = await _resolve_key(db, course.user_id, "anthropic")
+            api_key, key_source = await _resolve_key(db, course.user_id, "anthropic")
             if api_key is None:
                 provider = "openai"
-                api_key = await _resolve_key(db, course.user_id, "openai")
+                api_key, key_source = await _resolve_key(db, course.user_id, "openai")
             if api_key is None:
-                raise ValueError("Aucune clé API de génération configurée (BYOK)")
+                raise ValueError("Aucune clé API de génération configurée")
 
             result = await generate_sheet(
                 transcript.full_text, provider=provider, api_key=api_key, language=course.language
@@ -167,6 +186,24 @@ async def _run_generate_sheet(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
                 await db.flush()
             sheet.content = result["content"]
             sheet.model = result["model"]
+
+            from app.services import usage as usage_svc
+
+            in_tokens = max(len(transcript.full_text) // 4, 1)
+            out_tokens = max(len(str(result["content"])) // 4, 1)
+            await usage_svc.record_usage(
+                db,
+                user_id=course.user_id,
+                course_id=course_id,
+                kind="sheet",
+                provider=provider,
+                key_source=key_source,
+                input_tokens=in_tokens,
+                output_tokens=out_tokens,
+            )
+            user_obj = await db.get(User, course.user_id)
+            if user_obj is not None:
+                await usage_svc.maybe_alert_quota(db, user_obj)
 
             # Remplace les flashcards existantes
             existing = await db.scalars(

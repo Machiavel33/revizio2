@@ -171,3 +171,27 @@ export interface DownloadItem {
   version: string;
   url: string;
 }
+
+// --- Alertes / usage ---
+export interface Alert {
+  id: string;
+  severity: string;
+  category: string;
+  title: string;
+  message: string;
+  user_id: string | null;
+  metadata_: Record<string, unknown>;
+  is_read: boolean;
+  created_at: string;
+}
+export interface UserUsage {
+  user_id: string;
+  email: string;
+  key_mode: string;
+  audio_minutes: number;
+  sheet_count: number;
+  cost_usd: number;
+  quota_audio_minutes: number;
+  quota_sheet_count: number;
+  abuse_flags: string[];
+}

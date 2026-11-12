@@ -7,6 +7,8 @@ import DashboardPage from "./pages/DashboardPage";
 import CoursePage from "./pages/CoursePage";
 import SettingsPage from "./pages/SettingsPage";
 import DownloadPage from "./pages/DownloadPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import AdminPage from "./pages/admin/AdminPage";
 
 export default function App() {
@@ -28,6 +30,8 @@ export default function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );

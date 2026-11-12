@@ -16,12 +16,14 @@ import type {
   AdminJob,
   AdminStats,
   AdminUser,
+  Alert,
   OnlineInfo,
   PlatformKey,
   SystemInfo,
+  UserUsage,
 } from "../../lib/types";
 
-type Tab = "stats" | "users" | "platform" | "system" | "online" | "jobs";
+type Tab = "stats" | "users" | "platform" | "alerts" | "usage" | "system" | "online" | "jobs";
 
 const PROVIDERS = [
   { id: "openai", label: "OpenAI" },
@@ -37,6 +39,8 @@ export default function AdminPage() {
   const [platformKeys, setPlatformKeys] = useState<PlatformKey[]>([]);
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [online, setOnline] = useState<OnlineInfo | null>(null);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [usage, setUsage] = useState<UserUsage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,18 +48,22 @@ export default function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [s, u, j, pk, sys, on] = await Promise.all([
+      const [s, u, j, pk, sys, on, al, us] = await Promise.all([
         api.adminStats(),
         api.adminUsers(),
         api.adminJobs(),
         api.adminPlatformKeys(),
         api.adminSystem(),
         api.adminOnline(),
+        api.adminAlerts(),
+        api.adminUsage(),
       ]);
       setStats(s);
       setUsers(u);
       setJobs(j);
       setPlatformKeys(pk);
+      setAlerts(al);
+      setUsage(us);
       setSystem(sys);
       setOnline(on);
     } catch (e) {
@@ -63,6 +71,11 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function markRead(id: string) {
+    await api.adminMarkAlertRead(id);
+    setAlerts((list) => list.map((a) => (a.id === id ? { ...a, is_read: true } : a)));
   }
 
   useEffect(() => {
@@ -96,29 +109,38 @@ export default function AdminPage() {
       </div>
 
       <div className="mb-6 flex flex-wrap gap-2">
-        {(["stats", "users", "platform", "system", "online", "jobs"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              tab === t
-                ? "bg-[color:var(--bg-elevated)] text-[color:var(--accent-primary)]"
-                : "text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-elevated)]"
-            }`}
-          >
-            {t === "stats"
-              ? "Statistiques"
-              : t === "users"
-                ? "Utilisateurs"
-                : t === "platform"
-                  ? "Clés plateforme"
-                  : t === "system"
-                    ? "Système"
-                    : t === "online"
-                      ? `En ligne${online ? ` (${online.count})` : ""}`
-                      : "Jobs"}
-          </button>
-        ))}
+        {(
+          ["stats", "users", "platform", "alerts", "usage", "system", "online", "jobs"] as Tab[]
+        ).map((t) => {
+          const unread = alerts.filter((a) => !a.is_read).length;
+          return (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                tab === t
+                  ? "bg-[color:var(--bg-elevated)] text-[color:var(--accent-primary)]"
+                  : "text-[color:var(--text-secondary)] hover:bg-[color:var(--bg-elevated)]"
+              }`}
+            >
+              {t === "stats"
+                ? "Statistiques"
+                : t === "users"
+                  ? "Utilisateurs"
+                  : t === "platform"
+                    ? "Clés plateforme"
+                    : t === "alerts"
+                      ? `Alertes${unread ? ` (${unread})` : ""}`
+                      : t === "usage"
+                        ? "Quotas & usage"
+                        : t === "system"
+                          ? "Système"
+                          : t === "online"
+                            ? `En ligne${online ? ` (${online.count})` : ""}`
+                            : "Jobs"}
+            </button>
+          );
+        })}
       </div>
 
       {error && (
@@ -137,6 +159,10 @@ export default function AdminPage() {
         <UsersTab users={users} onUpdate={updateUser} />
       ) : tab === "platform" ? (
         <PlatformKeysTab keys={platformKeys} onChange={load} />
+      ) : tab === "alerts" ? (
+        <AlertsTab alerts={alerts} onRead={markRead} />
+      ) : tab === "usage" ? (
+        <UsageTab usage={usage} />
       ) : tab === "system" ? (
         <SystemTab system={system} />
       ) : tab === "online" ? (
@@ -555,6 +581,133 @@ function OnlineTab({ online }: { online: OnlineInfo | null }) {
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+function AlertsTab({ alerts, onRead }: { alerts: Alert[]; onRead: (id: string) => void }) {
+  const sevColor: Record<string, string> = {
+    info: "var(--accent-primary)",
+    warning: "var(--accent-warning)",
+    critical: "var(--accent-danger)",
+  };
+  if (alerts.length === 0) {
+    return (
+      <div className="card py-10 text-center text-sm text-[color:var(--text-muted)]">
+        Aucune alerte.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {alerts.map((a) => (
+        <div key={a.id} className={`card flex items-start gap-3 ${a.is_read ? "opacity-60" : ""}`}>
+          <span
+            className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ background: sevColor[a.severity] ?? "var(--text-muted)" }}
+          />
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{a.title}</span>
+              <span
+                className="rounded px-1.5 py-0.5 text-[10px] uppercase"
+                style={{ background: `${sevColor[a.severity]}22`, color: sevColor[a.severity] }}
+              >
+                {a.category}
+              </span>
+            </div>
+            {a.message && (
+              <p className="mt-1 text-sm text-[color:var(--text-secondary)]">{a.message}</p>
+            )}
+            <p className="mt-1 text-xs text-[color:var(--text-muted)]">
+              {new Date(a.created_at).toLocaleString("fr-FR")}
+            </p>
+          </div>
+          {!a.is_read && (
+            <button
+              onClick={() => onRead(a.id)}
+              className="rounded-md px-2 py-1 text-xs text-[color:var(--text-secondary)] hover:text-[color:var(--accent-primary)]"
+            >
+              Marquer lu
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function UsageTab({ usage }: { usage: UserUsage[] }) {
+  return (
+    <div className="card overflow-x-auto p-0">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-[color:var(--border-subtle)] text-left text-xs uppercase tracking-wider text-[color:var(--text-muted)]">
+            <th className="px-4 py-3">Utilisateur</th>
+            <th className="px-4 py-3">Mode</th>
+            <th className="px-4 py-3">Audio (min)</th>
+            <th className="px-4 py-3">Fiches</th>
+            <th className="px-4 py-3">Coût est. (USD)</th>
+            <th className="px-4 py-3">Signaux</th>
+          </tr>
+        </thead>
+        <tbody>
+          {usage.map((u) => {
+            const audioRatio = u.audio_minutes / Math.max(u.quota_audio_minutes, 1);
+            const sheetRatio = u.sheet_count / Math.max(u.quota_sheet_count, 1);
+            const ratio = Math.max(audioRatio, sheetRatio);
+            const barColor =
+              ratio >= 1
+                ? "var(--accent-danger)"
+                : ratio >= 0.8
+                  ? "var(--accent-warning)"
+                  : "var(--accent-success)";
+            return (
+              <tr key={u.user_id} className="border-b border-[color:var(--border-subtle)]/50">
+                <td className="px-4 py-3 font-mono text-xs">{u.email}</td>
+                <td className="px-4 py-3">
+                  <span className="rounded bg-[color:var(--bg-elevated)] px-2 py-0.5 text-xs">
+                    {u.key_mode}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-16 text-xs">
+                      {u.audio_minutes}/{u.quota_audio_minutes}
+                    </span>
+                    <div className="h-1.5 w-20 overflow-hidden rounded-full bg-[color:var(--bg-inset)]">
+                      <div
+                        className="h-full"
+                        style={{
+                          width: `${Math.min(audioRatio * 100, 100)}%`,
+                          background: barColor,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-xs">
+                  {u.sheet_count}/{u.quota_sheet_count}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs">${u.cost_usd.toFixed(4)}</td>
+                <td className="px-4 py-3">
+                  {u.abuse_flags.length > 0 ? (
+                    <span
+                      className="rounded px-1.5 py-0.5 text-[10px] uppercase"
+                      style={{ background: "var(--accent-danger)22", color: "var(--accent-danger)" }}
+                      title={u.abuse_flags.join("; ")}
+                    >
+                      ⚠ {u.abuse_flags.length} signal(aux)
+                    </span>
+                  ) : (
+                    <span className="text-xs text-[color:var(--text-muted)]">—</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

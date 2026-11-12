@@ -122,3 +122,29 @@ class OnlineUser(BaseModel):
 class OnlineOut(BaseModel):
     count: int
     users: list[OnlineUser]
+
+
+class AlertOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    severity: str
+    category: str
+    title: str
+    message: str
+    user_id: uuid.UUID | None
+    metadata_: dict = {}
+    is_read: bool
+    created_at: datetime
+
+
+class UserUsageOut(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    key_mode: str
+    audio_minutes: float
+    sheet_count: int
+    cost_usd: float
+    quota_audio_minutes: int
+    quota_sheet_count: int
+    abuse_flags: list[str] = []

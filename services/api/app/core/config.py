@@ -53,6 +53,24 @@ class Settings(BaseSettings):
     # Répertoire des binaires de l'app desktop (installeurs)
     downloads_dir: str = "/data/downloads"
 
+    # --- SMTP (emails transactionnels) ---
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    smtp_from: str = "Revizio <no-reply@revizio.darkops.fr>"
+    frontend_url: str = "https://revizio.darkops.fr"
+
+    # --- Quotas (par utilisateur, mensuel) ---
+    quota_audio_minutes: int = 600
+    quota_sheet_count: int = 100
+    quota_alert_threshold: float = 0.8
+
+    # --- Détection d'abus ---
+    abuse_max_courses_per_hour: int = 20
+    abuse_max_distinct_ips: int = 3
+
     # IA defaults
     default_transcribe_provider: str = "openai"
     default_sheet_provider: str = "anthropic"

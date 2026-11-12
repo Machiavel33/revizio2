@@ -17,16 +17,18 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models import User
+from app.models import PasswordResetToken, User
 from app.schemas.auth import (
     MfaRequired,
+    PasswordForgotIn,
+    PasswordResetIn,
     RefreshRequest,
     TokenPair,
     UserLogin,
     UserOut,
     UserRegister,
 )
-from app.services import audit
+from app.services import audit, mail
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -64,6 +66,7 @@ async def register(
         target=str(user.id),
         metadata={"email": user.email},
     )
+    mail.send_welcome(user.email, user.display_name)
     return TokenPair(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
@@ -130,3 +133,57 @@ async def refresh(
 @router.get("/me", response_model=UserOut)
 async def me(user: CurrentUser) -> User:
     return user
+
+
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+async def forgot_password(
+    payload: PasswordForgotIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    import hashlib
+    import secrets
+    from datetime import UTC, datetime, timedelta
+
+    user = await db.scalar(select(User).where(User.email == payload.email))
+    if user is not None and user.is_active:
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        db.add(
+            PasswordResetToken(
+                user_id=user.id,
+                token_hash=token_hash,
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+        await db.flush()
+        mail.send_password_reset(user.email, user.display_name, token)
+        await audit.record(db, action="user.password.forgot", actor_id=user.id, target=str(user.id))
+    return {"detail": "Si un compte existe, un email a été envoyé."}
+
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+async def reset_password(
+    payload: PasswordResetIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    import hashlib
+    from datetime import UTC, datetime
+
+    token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
+    reset = await db.scalar(
+        select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
+    )
+    if reset is None or reset.used or reset.expires_at < datetime.now(UTC):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Lien invalide ou expiré"
+        )
+    user = await db.get(User, reset.user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Utilisateur introuvable"
+        )
+    user.password_hash = hash_password(payload.new_password)
+    reset.used = True
+    await db.flush()
+    await audit.record(db, action="user.password.reset", actor_id=user.id, target=str(user.id))
+    return {"detail": "Mot de passe réinitialisé."}

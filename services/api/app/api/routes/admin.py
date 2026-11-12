@@ -16,14 +16,17 @@ from app.schemas.admin import (
     AdminStats,
     AdminUserOut,
     AdminUserUpdate,
+    AlertOut,
     AuditLogOut,
     AuditVerifyOut,
     OnlineOut,
     PlatformKeyCreate,
     PlatformKeyOut,
     SystemInfoOut,
+    UserUsageOut,
 )
 from app.services import audit, presence, system_info
+from app.services import usage as usage_svc
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -247,3 +250,79 @@ async def get_online_users(_admin: AdminUser) -> OnlineOut:
     """Utilisateurs actuellement connectés (présence live via Redis)."""
     users = await presence.online_users()
     return OnlineOut(count=len(users), users=users)
+
+
+# --- Alertes ---
+
+
+@router.get("/alerts", response_model=list[AlertOut])
+async def list_alerts(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    unread_only: bool = False,
+) -> list:
+    from app.models import Alert
+
+    stmt = select(Alert).order_by(Alert.created_at.desc()).limit(200)
+    if unread_only:
+        stmt = stmt.where(Alert.is_read.is_(False))
+    return list(await db.scalars(stmt))
+
+
+@router.get("/alerts/count")
+async def alerts_count(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    from app.models import Alert
+
+    total = int(
+        await db.scalar(select(func.count()).select_from(Alert).where(Alert.is_read.is_(False)))
+        or 0
+    )
+    return {"unread": total}
+
+
+@router.post("/alerts/{alert_id}/read", status_code=status.HTTP_204_NO_CONTENT)
+async def mark_alert_read(
+    alert_id: uuid.UUID,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    from app.models import Alert
+
+    alert = await db.get(Alert, alert_id)
+    if alert is not None:
+        alert.is_read = True
+        await db.flush()
+
+
+# --- Usage / quotas par utilisateur ---
+
+
+@router.get("/usage", response_model=list[UserUsageOut])
+async def list_usage(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[UserUsageOut]:
+    from app.core.config import settings
+
+    users = (await db.scalars(select(User).order_by(User.created_at.desc()))).all()
+    result = []
+    for u in users:
+        usage = await usage_svc.monthly_usage(db, u.id)
+        flags = await usage_svc.detect_abuse(db, u, None)
+        result.append(
+            UserUsageOut(
+                user_id=u.id,
+                email=u.email,
+                key_mode=u.key_mode,
+                audio_minutes=usage["audio_minutes"],
+                sheet_count=usage["sheet_count"],
+                cost_usd=usage["cost_usd"],
+                quota_audio_minutes=settings.quota_audio_minutes,
+                quota_sheet_count=settings.quota_sheet_count,
+                abuse_flags=flags,
+            )
+        )
+    return result

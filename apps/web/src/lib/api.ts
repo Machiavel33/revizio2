@@ -7,6 +7,7 @@ import type {
   ApiKey,
   Course,
   CourseDetail,
+  Alert,
   DownloadItem,
   KeyMode,
   OnlineInfo,
@@ -14,6 +15,7 @@ import type {
   SystemInfo,
   TokenPair,
   User,
+  UserUsage,
 } from "./types";
 
 // En production, l'API est servie en relatif (/api/...) via le reverse proxy nginx
@@ -166,6 +168,25 @@ export const api = {
 
   // Downloads (public)
   listDownloads: () => request<DownloadItem[]>("/api/downloads"),
+
+  // Alertes / usage (admin)
+  adminAlerts: () => request<Alert[]>("/api/admin/alerts"),
+  adminAlertsCount: () => request<{ unread: number }>("/api/admin/alerts/count"),
+  adminMarkAlertRead: (id: string) =>
+    request<void>(`/api/admin/alerts/${id}/read`, { method: "POST" }),
+  adminUsage: () => request<UserUsage[]>("/api/admin/usage"),
+
+  // Mot de passe oublié
+  forgotPassword: (email: string) =>
+    request<{ detail: string }>("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (token: string, new_password: string) =>
+    request<{ detail: string }>("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password }),
+    }),
 };
 
 export { API_BASE };

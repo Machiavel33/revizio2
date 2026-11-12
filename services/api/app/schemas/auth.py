@@ -43,3 +43,12 @@ class UserOut(BaseModel):
     role: str
     is_active: bool
     created_at: datetime
+
+
+class PasswordForgotIn(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetIn(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)

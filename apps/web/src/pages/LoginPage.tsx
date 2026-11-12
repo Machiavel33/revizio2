@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import Logo from "../components/Logo";
 
@@ -83,6 +84,15 @@ export default function LoginPage() {
         >
           {mode === "login" ? "Pas de compte ? S'inscrire" : "Déjà un compte ? Se connecter"}
         </button>
+
+        {mode === "login" && (
+          <Link
+            to="/forgot-password"
+            className="mt-2 block w-full text-center text-xs text-[color:var(--text-muted)] hover:text-[color:var(--accent-primary)]"
+          >
+            Mot de passe oublié ?
+          </Link>
+        )}
       </div>
     </div>
   );
