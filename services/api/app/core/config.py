@@ -75,6 +75,13 @@ class Settings(BaseSettings):
     default_transcribe_provider: str = "openai"
     default_sheet_provider: str = "anthropic"
 
+    # --- Transcription locale (faster-whisper, open source) ---
+    # Moteur : "auto" (local si dispo, sinon cloud), "local", "cloud"
+    transcribe_engine: str = "auto"
+    whisper_model: str = "small"  # tiny|base|small|medium|large-v3
+    whisper_device: str = "cpu"  # cpu|cuda
+    whisper_compute_type: str = "int8"  # int8|float16|float32
+
     # Upload limits (sécurité : prévention DoS mémoire)
     max_upload_bytes: int = 200 * 1024 * 1024  # 200 Mo
     allowed_audio_types: str = (

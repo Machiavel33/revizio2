@@ -8,10 +8,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Dépendances système minimales (asyncpg, cryptography)
+# Dépendances système (asyncpg, cryptography, faster-whisper/ctranslate2)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
+    libgomp1 \
+    ffmpeg \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -32,7 +34,9 @@ COPY alembic ./alembic
 COPY alembic.ini ./
 
 # Utilisateur non-root
-RUN useradd --create-home --uid 10001 revizio && chown -R revizio:revizio /app
+RUN useradd --create-home --uid 10001 revizio \
+    && mkdir -p /data/whisper /data/audio /data/downloads \
+    && chown -R revizio:revizio /app /data
 USER revizio
 
 EXPOSE 8000

@@ -5,6 +5,7 @@ asyncio.run(). Chaque tâche ouvre sa propre session DB.
 """
 
 import asyncio
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -26,6 +27,8 @@ from app.models import (
 from app.services.sheet_generator import generate_sheet
 from app.services.transcription import transcribe
 from app.workers.celery_app import celery_app
+
+log = logging.getLogger("revizio.worker")
 
 
 def _now() -> datetime:
@@ -99,19 +102,42 @@ async def _run_transcribe(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
             if not course.audio_url:
                 raise ValueError("Aucun audio pour ce cours")
 
-            # Provider de transcription : deepgram si dispo, sinon openai
-            provider = "deepgram"
-            api_key, key_source = await _resolve_key(db, course.user_id, "deepgram")
-            if api_key is None:
-                provider = "openai"
-                api_key, key_source = await _resolve_key(db, course.user_id, "openai")
-            if api_key is None:
-                raise ValueError("Aucune clé API de transcription configurée")
-
             audio = await _download_audio(course.audio_url)
-            result = await transcribe(
-                audio, provider=provider, api_key=api_key, language=course.language
-            )
+
+            # Choix du moteur : local (faster-whisper) ou cloud (deepgram/openai)
+            from app.core.config import settings as _settings
+
+            engine = _settings.transcribe_engine
+            result = None
+            provider = "local"
+            key_source = "local"
+
+            if engine in ("auto", "local"):
+                try:
+                    from app.services import whisper_local
+
+                    result = await asyncio.to_thread(
+                        whisper_local.transcribe_bytes, audio, course.language
+                    )
+                    provider = "local"
+                    key_source = "local"
+                except Exception as exc:  # noqa: BLE001
+                    if engine == "local":
+                        raise
+                    log.warning("Whisper local indisponible, fallback cloud: %s", exc)
+
+            if result is None:
+                # Fallback cloud : deepgram si dispo, sinon openai
+                provider = "deepgram"
+                api_key, key_source = await _resolve_key(db, course.user_id, "deepgram")
+                if api_key is None:
+                    provider = "openai"
+                    api_key, key_source = await _resolve_key(db, course.user_id, "openai")
+                if api_key is None:
+                    raise ValueError("Aucune clé API de transcription configurée")
+                result = await transcribe(
+                    audio, provider=provider, api_key=api_key, language=course.language
+                )
 
             transcript = await db.scalar(
                 select(Transcript).where(Transcript.course_id == course_id)

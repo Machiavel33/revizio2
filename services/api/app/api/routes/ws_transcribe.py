@@ -1,23 +1,25 @@
 """WebSocket : transcription temps réel PERSISTÉE côté serveur.
 
-Le desktop envoie des chunks audio binaires ; le backend les relaie au provider
-de transcription streaming (Deepgram) avec la clé (BYOK ou plateforme), renvoie
-le texte incrémental au client ET persiste chaque segment final dans le cours
-(transcript live), pour que le cours s'écrive en direct sur le serveur.
+Deux moteurs :
+- "local" : faster-whisper (open source, gratuit). Pseudo-live par fenêtres.
+- "cloud" : Deepgram (BYOK/plateforme). Vrai streaming.
+
+Le texte final est renvoyé au client ET persisté dans le cours (transcript live).
 
 Protocole client -> serveur :
   - 1er message texte JSON :
       {"type":"init","course_id":"<uuid>","language":"fr","token":"<access_jwt>"}
-  - messages binaires : chunks audio (webm/opus)
+  - messages binaires : chunks audio (PCM16 mono 16 kHz pour local, opus pour cloud)
   - message texte {"type":"stop"} pour terminer
 
 Protocole serveur -> client :
-  - {"type":"ready"}
+  - {"type":"ready","engine":"local|cloud"}
   - {"type":"partial","text":"..."}
   - {"type":"final","text":"..."}
   - {"type":"error","message":"..."}
 """
 
+import asyncio
 import json
 import uuid
 from datetime import UTC, datetime
@@ -25,6 +27,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.security import TokenError, decode_token
 from app.models import Course, Transcript, User
@@ -33,11 +36,15 @@ from app.workers.tasks import _resolve_key
 
 router = APIRouter()
 
+# Fenêtre de transcription locale (secondes d'audio accumulées avant traitement)
+LOCAL_WINDOW_SECONDS = 4
+PCM16_BYTES_PER_SEC = 16000 * 2  # 16 kHz mono int16
+
 
 async def _authenticate(
     token: str, course_id: uuid.UUID | None
-) -> tuple[uuid.UUID, str, Course | None] | None:
-    """Valide le JWT, résout la clé Deepgram (BYOK/plateforme) et le cours."""
+) -> tuple[uuid.UUID, Course | None] | None:
+    """Valide le JWT et vérifie le cours (appartenance)."""
     try:
         payload = decode_token(token, expected_type="access")
         user_id = uuid.UUID(payload["sub"])
@@ -48,34 +55,101 @@ async def _authenticate(
         user = await db.get(User, user_id)
         if user is None or not user.is_active:
             return None
-        api_key, _src = await _resolve_key(db, user_id, "deepgram")
-        if api_key is None:
-            return None
         course = None
         if course_id is not None:
             course = await db.get(Course, course_id)
             if course is None or course.user_id != user_id:
                 return None
-        return user_id, api_key, course
+        return user_id, course
 
 
 async def _append_final_segment(course_id: uuid.UUID, text: str) -> None:
     """Persiste un segment final dans le transcript du cours (live)."""
     async with AsyncSessionLocal() as db:
-        transcript = await db.scalar(
-            select(Transcript).where(Transcript.course_id == course_id)
-        )
+        transcript = await db.scalar(select(Transcript).where(Transcript.course_id == course_id))
         if transcript is None:
             transcript = Transcript(course_id=course_id, full_text="", segments=[])
             db.add(transcript)
-        # Concatène le texte et ajoute le segment horodaté
         transcript.full_text = (transcript.full_text + " " + text).strip()
         segs = list(transcript.segments or [])
         segs.append({"text": text, "ts": datetime.now(UTC).isoformat()})
         transcript.segments = segs
-        transcript.provider = transcript.provider or "deepgram"
-        transcript.model = transcript.model or "nova-2"
+        transcript.provider = transcript.provider or "local"
+        transcript.model = transcript.model or settings.whisper_model
         await db.commit()
+
+
+async def _run_local(
+    websocket: WebSocket,
+    course_id: uuid.UUID | None,
+    language: str,
+    audio_source,
+) -> None:
+    """Pseudo-live : accumule le PCM16, transcrit par fenêtres de ~4s."""
+    from app.services import whisper_local
+
+    buffer = bytearray()
+    window_bytes = LOCAL_WINDOW_SECONDS * PCM16_BYTES_PER_SEC
+
+    async for chunk in audio_source():
+        buffer.extend(chunk)
+        if len(buffer) < window_bytes:
+            continue
+        pcm = bytes(buffer)
+        buffer.clear()
+        try:
+            text = await asyncio.to_thread(whisper_local.transcribe_pcm16, pcm, language)
+        except Exception as exc:  # noqa: BLE001
+            await websocket.send_json({"type": "error", "message": str(exc)})
+            continue
+        if text:
+            await websocket.send_json({"type": "final", "text": text})
+            if course_id is not None:
+                await _append_final_segment(course_id, text)
+
+    # Traite le reste
+    if buffer:
+        try:
+            text = await asyncio.to_thread(whisper_local.transcribe_pcm16, bytes(buffer), language)
+            if text:
+                await websocket.send_json({"type": "final", "text": text})
+                if course_id is not None:
+                    await _append_final_segment(course_id, text)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _run_cloud(
+    websocket: WebSocket,
+    user_id: uuid.UUID,
+    course_id: uuid.UUID | None,
+    language: str,
+    audio_source,
+) -> None:
+    """Streaming Deepgram (BYOK/plateforme)."""
+    async with AsyncSessionLocal() as db:
+        api_key, _src = await _resolve_key(db, user_id, "deepgram")
+    if api_key is None:
+        await websocket.send_json(
+            {"type": "error", "message": "Aucune clé Deepgram (BYOK ou plateforme)"}
+        )
+        return
+
+    async def on_partial(text: str) -> None:
+        await websocket.send_json({"type": "partial", "text": text})
+
+    async def on_final(text: str) -> None:
+        await websocket.send_json({"type": "final", "text": text})
+        if course_id is not None:
+            await _append_final_segment(course_id, text)
+
+    await stream_deepgram(
+        audio_source(),
+        api_key=api_key,
+        language=language,
+        on_partial=on_partial,
+        on_final=on_final,
+    )
 
 
 @router.websocket("/ws/transcribe")
@@ -103,26 +177,20 @@ async def ws_transcribe(websocket: WebSocket) -> None:
     auth = await _authenticate(init.get("token", ""), course_id)
     if auth is None:
         await websocket.send_json(
-            {
-                "type": "error",
-                "message": "Auth invalide, clé Deepgram manquante ou cours introuvable",
-            }
+            {"type": "error", "message": "Auth invalide ou cours introuvable"}
         )
         await websocket.close(code=1008)
         return
 
-    _user_id, api_key, _course = auth
+    user_id, _course = auth
     language = init.get("language", "fr")
-    await websocket.send_json({"type": "ready"})
 
-    async def on_partial(text: str) -> None:
-        await websocket.send_json({"type": "partial", "text": text})
+    # Choix du moteur
+    engine = settings.transcribe_engine
+    if engine == "auto":
+        engine = "local"  # local par défaut (gratuit) ; fallback cloud géré plus bas
 
-    async def on_final(text: str) -> None:
-        # Renvoie au client ET persiste côté serveur (écriture en direct)
-        await websocket.send_json({"type": "final", "text": text})
-        if course_id is not None:
-            await _append_final_segment(course_id, text)
+    await websocket.send_json({"type": "ready", "engine": engine})
 
     async def audio_source():
         while True:
@@ -140,13 +208,10 @@ async def ws_transcribe(websocket: WebSocket) -> None:
                     return
 
     try:
-        await stream_deepgram(
-            audio_source(),
-            api_key=api_key,
-            language=language,
-            on_partial=on_partial,
-            on_final=on_final,
-        )
+        if engine == "local":
+            await _run_local(websocket, course_id, language, audio_source)
+        else:
+            await _run_cloud(websocket, user_id, course_id, language, audio_source)
     except WebSocketDisconnect:
         return
     except Exception as exc:  # noqa: BLE001
