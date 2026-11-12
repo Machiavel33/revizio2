@@ -88,6 +88,26 @@ Backend `local` (filesystem) par défaut en mono-serveur. Pour passer à S3/MinI
 1. Décommenter le service `minio` dans un compose dédié.
 2. Mettre `STORAGE_BACKEND=s3` + `S3_ENDPOINT_URL` dans l'environnement api/worker.
 
+## Transcription (faster-whisper local, gratuit)
+
+Moteur par défaut : **faster-whisper** (open source, offline, gratuit).
+Config via `.env` : `TRANSCRIBE_ENGINE` (local|cloud|auto) et `WHISPER_MODEL`.
+
+**Choix du modèle** (mesuré sur serveur 12 cœurs, CPU int8) :
+
+| Modèle | Vitesse | Qualité FR | Recommandation |
+|---|---|---|---|
+| tiny | 0.15x temps reel | Faible | Deconseille |
+| base | 0.25x | Moyenne | Deconseille |
+| **small** | **0.40x** | **Tres bonne** | **Recommande** |
+| medium | ~1.0x | Excellente | Si CPU dispo |
+| large-v3 | ~2x | Maximale | GPU conseille |
+
+`small` transcrit un cours de 1h en ~24 min (batch) et tient le live sans saturer.
+Le modele est mis en cache dans le volume `whisper_cache` (pas de re-telechargement).
+
+Pour un GPU : `WHISPER_DEVICE=cuda` + `WHISPER_COMPUTE_TYPE=float16`.
+
 ## Renouvellement TLS
 
 Automatique via `certbot.timer`. Vérifier :
