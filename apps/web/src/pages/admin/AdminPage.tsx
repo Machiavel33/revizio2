@@ -12,9 +12,16 @@ import {
   Plus,
 } from "lucide-react";
 import { api } from "../../lib/api";
-import type { AdminJob, AdminStats, AdminUser, PlatformKey } from "../../lib/types";
+import type {
+  AdminJob,
+  AdminStats,
+  AdminUser,
+  OnlineInfo,
+  PlatformKey,
+  SystemInfo,
+} from "../../lib/types";
 
-type Tab = "stats" | "users" | "platform" | "jobs";
+type Tab = "stats" | "users" | "platform" | "system" | "online" | "jobs";
 
 const PROVIDERS = [
   { id: "openai", label: "OpenAI" },
@@ -28,6 +35,8 @@ export default function AdminPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [jobs, setJobs] = useState<AdminJob[]>([]);
   const [platformKeys, setPlatformKeys] = useState<PlatformKey[]>([]);
+  const [system, setSystem] = useState<SystemInfo | null>(null);
+  const [online, setOnline] = useState<OnlineInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,16 +44,20 @@ export default function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [s, u, j, pk] = await Promise.all([
+      const [s, u, j, pk, sys, on] = await Promise.all([
         api.adminStats(),
         api.adminUsers(),
         api.adminJobs(),
         api.adminPlatformKeys(),
+        api.adminSystem(),
+        api.adminOnline(),
       ]);
       setStats(s);
       setUsers(u);
       setJobs(j);
       setPlatformKeys(pk);
+      setSystem(sys);
+      setOnline(on);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -54,6 +67,20 @@ export default function AdminPage() {
 
   useEffect(() => {
     void load();
+  }, []);
+
+  // Rafraîchissement live (système + présence) toutes les 5s
+  useEffect(() => {
+    const t = window.setInterval(async () => {
+      try {
+        const [sys, on] = await Promise.all([api.adminSystem(), api.adminOnline()]);
+        setSystem(sys);
+        setOnline(on);
+      } catch {
+        /* ignore */
+      }
+    }, 5000);
+    return () => window.clearInterval(t);
   }, []);
 
   async function updateUser(u: AdminUser, patch: { is_active?: boolean; key_mode?: string }) {
@@ -69,7 +96,7 @@ export default function AdminPage() {
       </div>
 
       <div className="mb-6 flex flex-wrap gap-2">
-        {(["stats", "users", "platform", "jobs"] as Tab[]).map((t) => (
+        {(["stats", "users", "platform", "system", "online", "jobs"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -85,7 +112,11 @@ export default function AdminPage() {
                 ? "Utilisateurs"
                 : t === "platform"
                   ? "Clés plateforme"
-                  : "Jobs"}
+                  : t === "system"
+                    ? "Système"
+                    : t === "online"
+                      ? `En ligne${online ? ` (${online.count})` : ""}`
+                      : "Jobs"}
           </button>
         ))}
       </div>
@@ -106,6 +137,10 @@ export default function AdminPage() {
         <UsersTab users={users} onUpdate={updateUser} />
       ) : tab === "platform" ? (
         <PlatformKeysTab keys={platformKeys} onChange={load} />
+      ) : tab === "system" ? (
+        <SystemTab system={system} />
+      ) : tab === "online" ? (
+        <OnlineTab online={online} />
       ) : (
         <JobsTab jobs={jobs} />
       )}
@@ -383,6 +418,143 @@ function JobsTab({ jobs }: { jobs: AdminJob[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function fmtUptime(sec: number): string {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return `${d}j ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function SystemTab({ system }: { system: SystemInfo | null }) {
+  if (!system) return <p className="text-sm text-[color:var(--text-muted)]">Chargement…</p>;
+  const a = system.app;
+  return (
+    <div className="space-y-4">
+      <div className="card">
+        <h2 className="mb-3 font-display text-lg font-semibold">Application</h2>
+        <dl className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <dt className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">Nom</dt>
+            <dd className="font-medium">{a.name}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">Version</dt>
+            <dd className="font-mono text-[color:var(--accent-primary)]">v{a.version}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">Environnement</dt>
+            <dd>{a.environment}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">Uptime</dt>
+            <dd>{fmtUptime(a.uptime_seconds)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">Python</dt>
+            <dd className="font-mono text-xs">{a.python}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">Plateforme</dt>
+            <dd className="font-mono text-xs">{a.platform}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">Stockage</dt>
+            <dd>{system.storage_backend}</dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wider text-[color:var(--text-muted)]">Rate-limit</dt>
+            <dd>
+              {system.rate_limit.enabled ? `actif (${system.rate_limit.backend})` : "désactivé"}
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      <div className="card">
+        <h2 className="mb-3 font-display text-lg font-semibold">Services</h2>
+        <div className="space-y-2">
+          {system.services.map((s) => (
+            <div
+              key={s.name}
+              className="flex items-center justify-between rounded-md bg-[color:var(--bg-inset)] px-3 py-2.5"
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{
+                    background:
+                      s.status === "up" ? "var(--accent-success)" : "var(--accent-danger)",
+                  }}
+                />
+                <span className="font-medium">{s.name}</span>
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                {s.workers && s.workers.length > 0 && (
+                  <span className="text-[color:var(--text-muted)]">
+                    {s.workers.length} worker(s)
+                  </span>
+                )}
+                <span
+                  style={{
+                    color:
+                      s.status === "up" ? "var(--accent-success)" : "var(--accent-danger)",
+                  }}
+                >
+                  {s.status}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OnlineTab({ online }: { online: OnlineInfo | null }) {
+  if (!online) return <p className="text-sm text-[color:var(--text-muted)]">Chargement…</p>;
+  return (
+    <div className="space-y-4">
+      <div className="card flex items-center gap-3">
+        <span className="h-3 w-3 animate-pulse rounded-full bg-[color:var(--accent-success)]" />
+        <span className="font-display text-2xl font-bold">{online.count}</span>
+        <span className="text-sm text-[color:var(--text-secondary)]">
+          utilisateur(s) en ligne (live, rafraîchi toutes les 5s)
+        </span>
+      </div>
+
+      <div className="card overflow-x-auto p-0">
+        {online.users.length === 0 ? (
+          <p className="p-4 text-sm text-[color:var(--text-muted)]">Personne en ligne.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[color:var(--border-subtle)] text-left text-xs uppercase tracking-wider text-[color:var(--text-muted)]">
+                <th className="px-4 py-3">Utilisateur</th>
+                <th className="px-4 py-3">Email</th>
+                <th className="px-4 py-3">Dernière activité</th>
+              </tr>
+            </thead>
+            <tbody>
+              {online.users.map((u) => (
+                <tr key={u.user_id} className="border-b border-[color:var(--border-subtle)]/50">
+                  <td className="px-4 py-3 font-medium">{u.display_name || "—"}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{u.email}</td>
+                  <td className="px-4 py-3 text-xs text-[color:var(--text-secondary)]">
+                    il y a {u.idle_seconds}s
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

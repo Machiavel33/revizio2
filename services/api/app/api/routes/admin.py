@@ -18,10 +18,12 @@ from app.schemas.admin import (
     AdminUserUpdate,
     AuditLogOut,
     AuditVerifyOut,
+    OnlineOut,
     PlatformKeyCreate,
     PlatformKeyOut,
+    SystemInfoOut,
 )
-from app.services import audit
+from app.services import audit, presence, system_info
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -232,3 +234,16 @@ async def verify_audit(
     ok, broken_at = await audit.verify_chain(db)
     total = int(await db.scalar(select(func.count()).select_from(AuditLog)) or 0)
     return AuditVerifyOut(ok=ok, broken_at_seq=broken_at, total_entries=total)
+
+
+@router.get("/system", response_model=SystemInfoOut)
+async def get_system_info(_admin: AdminUser) -> dict:
+    """Versions, santé des services, uptime."""
+    return await system_info.system_info()
+
+
+@router.get("/online", response_model=OnlineOut)
+async def get_online_users(_admin: AdminUser) -> OnlineOut:
+    """Utilisateurs actuellement connectés (présence live via Redis)."""
+    users = await presence.online_users()
+    return OnlineOut(count=len(users), users=users)

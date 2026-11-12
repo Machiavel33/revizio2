@@ -86,3 +86,39 @@ class AuditVerifyOut(BaseModel):
     ok: bool
     broken_at_seq: int | None
     total_entries: int
+
+
+class ServiceStatus(BaseModel):
+    name: str
+    status: str
+    error: str | None = None
+    workers: list[str] = []
+
+
+class AppInfo(BaseModel):
+    name: str
+    version: str
+    environment: str
+    python: str
+    platform: str
+    uptime_seconds: int
+
+
+class SystemInfoOut(BaseModel):
+    app: AppInfo
+    services: list[ServiceStatus]
+    storage_backend: str
+    rate_limit: dict
+
+
+class OnlineUser(BaseModel):
+    user_id: str
+    email: str
+    display_name: str
+    last_seen: int
+    idle_seconds: int
+
+
+class OnlineOut(BaseModel):
+    count: int
+    users: list[OnlineUser]

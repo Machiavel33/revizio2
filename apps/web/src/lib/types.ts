@@ -129,3 +129,35 @@ export interface AdminJob extends Job {
   user_email: string;
   course_title: string;
 }
+
+// --- Système / présence ---
+export interface ServiceStatus {
+  name: string;
+  status: string;
+  error?: string | null;
+  workers?: string[];
+}
+export interface SystemInfo {
+  app: {
+    name: string;
+    version: string;
+    environment: string;
+    python: string;
+    platform: string;
+    uptime_seconds: number;
+  };
+  services: ServiceStatus[];
+  storage_backend: string;
+  rate_limit: { enabled: boolean; backend: string };
+}
+export interface OnlineUser {
+  user_id: string;
+  email: string;
+  display_name: string;
+  last_seen: number;
+  idle_seconds: number;
+}
+export interface OnlineInfo {
+  count: number;
+  users: OnlineUser[];
+}

@@ -40,6 +40,10 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Utilisateur introuvable ou désactivé",
         )
+    # Heartbeat de présence (best-effort, non bloquant)
+    from app.services import presence
+
+    await presence.heartbeat(user.id, user.email, user.display_name)
     return user
 
 

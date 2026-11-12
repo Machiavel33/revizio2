@@ -8,7 +8,9 @@ import type {
   Course,
   CourseDetail,
   KeyMode,
+  OnlineInfo,
   PlatformKey,
+  SystemInfo,
   TokenPair,
   User,
 } from "./types";
@@ -158,6 +160,8 @@ export const api = {
     }),
   adminDeletePlatformKey: (id: string) =>
     request<void>(`/api/admin/platform-keys/${id}`, { method: "DELETE" }),
+  adminSystem: () => request<SystemInfo>("/api/admin/system"),
+  adminOnline: () => request<OnlineInfo>("/api/admin/online"),
 };
 
 export { API_BASE };
