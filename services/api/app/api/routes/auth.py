@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,9 +33,24 @@ from app.services import audit, mail
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _client_meta(request: Request) -> dict:
+    """Métadonnées de traçabilité (IP, user-agent, origine)."""
+    forwarded = request.headers.get("x-forwarded-for")
+    ip = forwarded.split(",")[0].strip() if forwarded else (
+        request.client.host if request.client else "unknown"
+    )
+    return {
+        "ip": ip,
+        "user_agent": request.headers.get("user-agent", "")[:500],
+        "origin": request.headers.get("origin", "")[:200],
+        "referer": request.headers.get("referer", "")[:300],
+    }
+
+
 @router.post("/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
 async def register(
     payload: UserRegister,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TokenPair:
     existing = await db.scalar(select(User).where(User.email == payload.email))
@@ -51,10 +66,13 @@ async def register(
     has_platform = await db.scalar(
         select(PlatformKey.id).where(PlatformKey.is_active.is_(True)).limit(1)
     )
+    full_name = f"{payload.first_name} {payload.last_name}".strip()
     user = User(
         email=payload.email,
         password_hash=hash_password(payload.password),
-        display_name=payload.display_name or payload.email.split("@")[0],
+        first_name=payload.first_name,
+        last_name=payload.last_name,
+        display_name=payload.display_name or full_name or payload.email.split("@")[0],
         key_mode="platform" if has_platform else "byok",
     )
     db.add(user)
@@ -64,7 +82,12 @@ async def register(
         action="user.register",
         actor_id=user.id,
         target=str(user.id),
-        metadata={"email": user.email},
+        metadata={
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            **_client_meta(request),
+        },
     )
     mail.send_welcome(user.email, user.display_name)
     return TokenPair(
@@ -76,6 +99,7 @@ async def register(
 @router.post("/login", response_model=TokenPair | MfaRequired)
 async def login(
     payload: UserLogin,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TokenPair | MfaRequired:
     user = await db.scalar(select(User).where(User.email == payload.email))
@@ -96,10 +120,20 @@ async def login(
     # 2FA activée : émet un challenge court au lieu des tokens finaux
     if user.totp_enabled:
         await audit.record(
-            db, action="user.login.mfa_challenge", actor_id=user.id, target=str(user.id)
+            db,
+            action="user.login.mfa_challenge",
+            actor_id=user.id,
+            target=str(user.id),
+            metadata=_client_meta(request),
         )
         return MfaRequired(mfa_token=create_mfa_token(str(user.id)))
-    await audit.record(db, action="user.login", actor_id=user.id, target=str(user.id))
+    await audit.record(
+        db,
+        action="user.login",
+        actor_id=user.id,
+        target=str(user.id),
+        metadata=_client_meta(request),
+    )
     return TokenPair(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),

@@ -153,6 +153,8 @@ class UserUsageOut(BaseModel):
 class AdminUserCreate(BaseModel):
     email: str
     password: str
+    first_name: str = ""
+    last_name: str = ""
     display_name: str = ""
     role: str = "student"
 

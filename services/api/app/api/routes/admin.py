@@ -351,10 +351,13 @@ async def create_user(
     existing = await db.scalar(select(User).where(User.email == payload.email))
     if existing is not None:
         raise HTTPException(status_code=409, detail="Email déjà utilisé")
+    full_name = f"{payload.first_name} {payload.last_name}".strip()
     user = User(
         email=payload.email,
         password_hash=hash_password(payload.password),
-        display_name=payload.display_name or payload.email.split("@")[0],
+        first_name=payload.first_name,
+        last_name=payload.last_name,
+        display_name=payload.display_name or full_name or payload.email.split("@")[0],
         role=payload.role,
     )
     db.add(user)

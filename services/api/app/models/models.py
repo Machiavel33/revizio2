@@ -35,6 +35,8 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    first_name: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    last_name: Mapped[str] = mapped_column(String(80), nullable=False, default="")
     display_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="student")
     oauth_provider: Mapped[str | None] = mapped_column(String(30), nullable=True)

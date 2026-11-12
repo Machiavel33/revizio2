@@ -279,7 +279,8 @@ function UsersTab({
   const [showCreate, setShowCreate] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [role, setRole] = useState("student");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -288,10 +289,11 @@ function UsersTab({
     setError(null);
     setBusy(true);
     try {
-      await api.adminCreateUser(email, password, name, role);
+      await api.adminCreateUser(email, password, firstName, lastName, role);
       setEmail("");
       setPassword("");
-      setName("");
+      setFirstName("");
+      setLastName("");
       setRole("student");
       setShowCreate(false);
       onRefresh();
@@ -352,9 +354,15 @@ function UsersTab({
             />
             <input
               className="input"
-              placeholder="nom affiché"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              placeholder="prénom"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+            />
+            <input
+              className="input"
+              placeholder="nom"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
             />
             <select className="input" value={role} onChange={(e) => setRole(e.target.value)}>
               <option value="student">Élève (student)</option>

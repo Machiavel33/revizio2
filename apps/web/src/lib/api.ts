@@ -99,10 +99,10 @@ async function tryRefresh(): Promise<boolean> {
 }
 
 export const api = {
-  register: (email: string, password: string, display_name: string) =>
+  register: (email: string, password: string, first_name: string, last_name: string) =>
     request<TokenPair>("/api/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email, password, display_name }),
+      body: JSON.stringify({ email, password, first_name, last_name }),
     }),
   login: (email: string, password: string) =>
     request<TokenPair>("/api/auth/login", {
@@ -187,10 +187,16 @@ export const api = {
   adminUsage: () => request<UserUsage[]>("/api/admin/usage"),
 
   // Admin complet : users CRUD
-  adminCreateUser: (email: string, password: string, display_name: string, role: string) =>
+  adminCreateUser: (
+    email: string,
+    password: string,
+    first_name: string,
+    last_name: string,
+    role: string,
+  ) =>
     request<AdminUser>("/api/admin/users", {
       method: "POST",
-      body: JSON.stringify({ email, password, display_name, role }),
+      body: JSON.stringify({ email, password, first_name, last_name, role }),
     }),
   adminSetRole: (id: string, role: string) =>
     request<AdminUser>(`/api/admin/users/${id}/role`, {

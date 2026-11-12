@@ -8,7 +8,8 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -18,7 +19,7 @@ export default function LoginPage() {
     setBusy(true);
     try {
       if (mode === "login") await login(email, password);
-      else await register(email, password, name);
+      else await register(email, password, firstName, lastName);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
@@ -41,9 +42,27 @@ export default function LoginPage() {
 
         <form onSubmit={submit} className="space-y-4">
           {mode === "register" && (
-            <div>
-              <label className="label">Nom</label>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Prénom</label>
+                <input
+                  className="input"
+                  required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="Alice"
+                />
+              </div>
+              <div>
+                <label className="label">Nom</label>
+                <input
+                  className="input"
+                  required
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Martin"
+                />
+              </div>
             </div>
           )}
           <div>
