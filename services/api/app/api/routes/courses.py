@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -19,9 +19,24 @@ from app.schemas.course import (
     CourseUpdate,
     JobOut,
 )
+from app.services import audit
 from app.services.storage import build_audio_key, upload_audio
 
 router = APIRouter(prefix="/courses", tags=["courses"])
+
+
+def _client_meta(request: Request) -> dict:
+    """Métadonnées de traçabilité (IP, user-agent)."""
+    forwarded = request.headers.get("x-forwarded-for")
+    ip = (
+        forwarded.split(",")[0].strip()
+        if forwarded
+        else (request.client.host if request.client else "unknown")
+    )
+    return {
+        "ip": ip,
+        "user_agent": request.headers.get("user-agent", "")[:500],
+    }
 
 
 async def _get_owned_course(course_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession) -> Course:
@@ -53,6 +68,7 @@ async def list_courses(
 @router.post("", response_model=CourseOut, status_code=status.HTTP_201_CREATED)
 async def create_course(
     payload: CourseCreate,
+    request: Request,
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Course:
@@ -66,6 +82,13 @@ async def create_course(
     )
     db.add(course)
     await db.flush()
+    await audit.record(
+        db,
+        action="course.create",
+        actor_id=user.id,
+        target=str(course.id),
+        metadata={"title": course.title, **_client_meta(request)},
+    )
     return course
 
 
@@ -106,6 +129,7 @@ async def delete_course(
 @router.post("/{course_id}/audio", response_model=CourseOut)
 async def upload_course_audio(
     course_id: uuid.UUID,
+    request: Request,
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
     file: Annotated[UploadFile, File()],
@@ -136,6 +160,18 @@ async def upload_course_audio(
     course.audio_url = url
     course.status = "transcribing"
     await db.flush()
+    await audit.record(
+        db,
+        action="course.audio.upload",
+        actor_id=user.id,
+        target=str(course.id),
+        metadata={
+            "filename": file.filename or "audio.webm",
+            "size_bytes": len(data),
+            "content_type": content_type,
+            **_client_meta(request),
+        },
+    )
     return course
 
 
