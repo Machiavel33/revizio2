@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Download, Monitor, Apple, Terminal, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { api } from "../lib/api";
+import { useAuth } from "../hooks/useAuth";
 import type { DownloadItem } from "../lib/types";
 
 /** Détecte l'OS du visiteur (best-effort, côté navigateur). */
@@ -34,6 +35,8 @@ export default function DownloadPage() {
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const os = detectOS();
+  const user = useAuth((s) => s.user);
+  const isAdmin = user?.role === "admin";
 
   useEffect(() => {
     api
@@ -47,8 +50,9 @@ export default function DownloadPage() {
   const currentList = os !== "unknown" ? byOS(os) : [];
   const hasCurrent = currentList.length > 0;
 
-  // OS à afficher : le courant seul par défaut, tous si "voir les autres".
-  const visibleOS: string[] = showAll
+  // OS à afficher : l'admin voit tout ; sinon le courant seul par défaut,
+  // tous si "voir les autres" (ou si aucun installeur pour l'OS détecté).
+  const visibleOS: string[] = isAdmin || showAll
     ? [...OS_ORDER]
     : hasCurrent
       ? [os]
@@ -99,7 +103,14 @@ export default function DownloadPage() {
   return (
     <div className="mx-auto max-w-4xl p-8">
       <div className="mb-8">
-        <h1 className="font-display text-3xl font-bold">Télécharger Revizio</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="font-display text-3xl font-bold">Télécharger Revizio</h1>
+          {isAdmin && (
+            <span className="rounded bg-[color:var(--accent-secondary)]/15 px-2 py-0.5 text-xs font-semibold uppercase text-[color:var(--accent-secondary)]">
+              Vue admin — toutes les plateformes
+            </span>
+          )}
+        </div>
         <p className="mt-1 text-sm text-[color:var(--text-secondary)]">
           L'application desktop permet d'enregistrer vos cours avec le micro de votre PC et de
           les transcrire en direct. Le site web sert à consulter vos fiches.
@@ -140,8 +151,8 @@ export default function DownloadPage() {
 
           {visibleOS.map((target) => renderOS(target))}
 
-          {/* Toggle : voir les autres systèmes */}
-          {hasCurrent && (
+          {/* Toggle : voir les autres systèmes (masqué pour l'admin qui voit tout) */}
+          {!isAdmin && hasCurrent && (
             <button
               onClick={() => setShowAll((v) => !v)}
               className="btn-secondary w-full justify-center"

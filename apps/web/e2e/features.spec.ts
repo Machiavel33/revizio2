@@ -225,3 +225,28 @@ test("téléchargement : n'affiche que l'OS détecté par défaut", async ({ pag
   await expect(page.getByText("Revizio_0.1.0_x64_fr-FR.msi")).toBeVisible();
   await expect(page.getByText("Revizio_0.1.0_aarch64.dmg")).toBeVisible();
 });
+
+test("téléchargement admin : voit toutes les plateformes", async ({ page }) => {
+  await login(page, adminUser);
+  const downloads = [
+    { filename: "Revizio_0.1.0_amd64.deb", size: 6000000, os: "linux", arch: "x86_64", version: "0.1.0", url: "/api/downloads/Revizio_0.1.0_amd64.deb" },
+    { filename: "Revizio_0.1.0_x64_fr-FR.msi", size: 5800000, os: "windows", arch: "x86_64", version: "0.1.0", url: "/api/downloads/Revizio_0.1.0_x64_fr-FR.msi" },
+    { filename: "Revizio_0.1.0_aarch64.dmg", size: 5500000, os: "macos", arch: "aarch64", version: "0.1.0", url: "/api/downloads/Revizio_0.1.0_aarch64.dmg" },
+  ];
+  await page.route(`${API}/api/downloads`, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(downloads) }),
+  );
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", { get: () => "Mozilla/5.0 (X11; Linux x86_64)" });
+    Object.defineProperty(navigator, "platform", { get: () => "Linux x86_64" });
+  });
+  await page.goto("/download");
+
+  // L'admin voit TOUTES les plateformes, même en étant sur Linux
+  await expect(page.getByText("Revizio_0.1.0_amd64.deb")).toBeVisible();
+  await expect(page.getByText("Revizio_0.1.0_x64_fr-FR.msi")).toBeVisible();
+  await expect(page.getByText("Revizio_0.1.0_aarch64.dmg")).toBeVisible();
+  // Badge admin + pas de toggle
+  await expect(page.getByText(/Vue admin/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Voir les autres systèmes/ })).toHaveCount(0);
+});
