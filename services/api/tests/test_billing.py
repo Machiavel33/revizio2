@@ -65,7 +65,11 @@ async def test_user_billing_lines(db):
     assert detail["period"] == f"{now.year:04d}-{now.month:02d}"
     kinds = {line["kind"] for line in detail["lines"]}
     assert kinds == {"sheet", "transcribe"}
-    assert abs(detail["total_cost_usd"] - 0.022) < 1e-6
+    # Prix publics : 1 fiche (0.05) + 120s audio (0.30/h -> 0.01) = 0.06
+    assert abs(detail["subtotal"] - 0.06) < 1e-6
+    assert detail["total"] == detail["base"] + detail["vat"]
+    assert "real_cost_usd" in detail
+    assert "margin_covered" in detail
 
 
 async def test_billing_csv(db):

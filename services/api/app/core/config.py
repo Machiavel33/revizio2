@@ -68,12 +68,40 @@ class Settings(BaseSettings):
     quota_alert_threshold: float = 0.8
 
     # --- Facturation (refacturation de l'usage clé plateforme) ---
-    # Marge appliquée au coût réel du fournisseur (1.0 = à prix coûtant).
+    # Modèle : prix publics simples (compréhensibles) avec marge intégrée,
+    # plutôt qu'un coût brut × marge opaque. Compromis : l'étudiant paie un
+    # prix juste et prévisible, l'établissement couvre ses coûts + une marge.
+    #
+    # Prix publics (dans la devise d'affichage) :
+    # - par heure d'audio transcrite (clé plateforme)
+    billing_price_per_audio_hour: float = 0.30
+    # - par fiche de révision générée (clé plateforme)
+    billing_price_per_sheet: float = 0.05
+    # - par quiz généré
+    billing_price_per_quiz: float = 0.03
+    # Plancher de facturation mensuelle (0 = pas de minimum).
+    billing_min_monthly: float = 0.0
+    # Marge de sécurité appliquée au coût réel (garde-fou si les prix publics
+    # sous-estiment le coût fournisseur). 1.0 = pas de garde-fou.
     billing_markup: float = 1.0
     # Devise d'affichage (les coûts sont stockés en USD).
     billing_currency: str = "EUR"
     # Taux USD -> devise d'affichage (indicatif, ajustable).
     billing_usd_rate: float = 0.92
+    # TVA appliquée aux factures (0 = exonéré).
+    billing_vat_rate: float = 0.0
+    # Mentions légales de l'émetteur (facture PDF).
+    billing_issuer_name: str = "Revizio"
+    billing_issuer_address: str = ""
+    billing_issuer_vat: str = ""
+
+    # --- Stripe (paiement en ligne des factures) ---
+    # Vide = paiement en ligne désactivé (factures payables hors ligne).
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    # URLs de retour après paiement (front web).
+    stripe_success_url: str = "https://revizio.darkops.fr/settings?paid=1"
+    stripe_cancel_url: str = "https://revizio.darkops.fr/settings?paid=0"
 
     # --- Détection d'abus ---
     abuse_max_courses_per_hour: int = 20

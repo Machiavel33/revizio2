@@ -8,6 +8,7 @@ from app.models.models import (
     ExamFolder,
     ExamFolderItem,
     Flashcard,
+    Invoice,
     Job,
     PasswordResetToken,
     PlatformKey,
@@ -42,4 +43,5 @@ __all__ = [
     "ExamFolderItem",
     "Quiz",
     "QuizQuestion",
+    "Invoice",
 ]

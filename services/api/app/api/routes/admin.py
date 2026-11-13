@@ -689,3 +689,164 @@ async def billing_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="facturation-{y:04d}-{m:02d}.csv"'},
     )
+
+
+# --- Factures (génération, émission, paiement, PDF) ---
+
+
+@router.post("/invoices/generate", status_code=status.HTTP_201_CREATED)
+async def generate_invoice(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user_id: uuid.UUID,
+    year: int | None = None,
+    month: int | None = None,
+) -> dict:
+    """Génère (brouillon) la facture d'un utilisateur pour un mois."""
+    from app.services import invoices as inv_svc
+
+    now = datetime.now(UTC)
+    y = year or now.year
+    m = month or now.month
+    if not 1 <= m <= 12:
+        raise HTTPException(status_code=400, detail="month doit être entre 1 et 12")
+    inv = await inv_svc.generate_invoice(db, user_id, y, m)
+    await audit.record(
+        db, action="admin.invoice.generate", actor_id=_admin.id, target=str(inv.id),
+        metadata={"period": inv.period, "total": inv.total},
+    )
+    return _invoice_out(inv)
+
+
+@router.get("/invoices")
+async def list_invoices(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status_filter: str | None = None,
+    period: str | None = None,
+) -> list[dict]:
+    """Liste les factures (filtres optionnels : statut, période)."""
+    from app.models import Invoice
+
+    stmt = select(Invoice).order_by(Invoice.created_at.desc()).limit(500)
+    if status_filter:
+        stmt = stmt.where(Invoice.status == status_filter)
+    if period:
+        stmt = stmt.where(Invoice.period == period)
+    rows = await db.scalars(stmt)
+    return [_invoice_out(i) for i in rows]
+
+
+@router.post("/invoices/{invoice_id}/issue")
+async def issue_invoice(
+    invoice_id: uuid.UUID,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    due_days: int = 30,
+) -> dict:
+    """Émet une facture (draft -> sent) avec échéance."""
+    from app.services import invoices as inv_svc
+
+    try:
+        inv = await inv_svc.issue_invoice(db, invoice_id, due_days)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await audit.record(
+        db, action="admin.invoice.issue", actor_id=_admin.id, target=str(invoice_id)
+    )
+    return _invoice_out(inv)
+
+
+@router.post("/invoices/{invoice_id}/paid")
+async def mark_invoice_paid(
+    invoice_id: uuid.UUID,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Marque une facture comme payée (paiement hors ligne / manuel)."""
+    from app.services import invoices as inv_svc
+
+    try:
+        inv = await inv_svc.mark_paid(db, invoice_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await audit.record(
+        db, action="admin.invoice.paid", actor_id=_admin.id, target=str(invoice_id)
+    )
+    return _invoice_out(inv)
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+async def invoice_pdf(
+    invoice_id: uuid.UUID,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Télécharge la facture en PDF."""
+    from fastapi.responses import Response
+
+    from app.models import Invoice
+    from app.services import invoices as inv_svc
+
+    inv = await db.get(Invoice, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Facture introuvable")
+    user = await db.get(User, inv.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    pdf = inv_svc.invoice_pdf(inv, user)
+    return Response(
+        pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{inv.number}.pdf"'},
+    )
+
+
+@router.post("/invoices/{invoice_id}/checkout")
+async def invoice_checkout(
+    invoice_id: uuid.UUID,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Crée une session Stripe Checkout pour payer la facture en ligne."""
+    from app.models import Invoice
+    from app.services import stripe_pay
+
+    if not stripe_pay.enabled():
+        raise HTTPException(status_code=503, detail="Paiement en ligne non configuré")
+    inv = await db.get(Invoice, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Facture introuvable")
+    if inv.status == "paid":
+        raise HTTPException(status_code=400, detail="Facture déjà payée")
+    user = await db.get(User, inv.user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    url = stripe_pay.create_checkout_session(
+        invoice_id=str(inv.id),
+        invoice_number=inv.number,
+        amount=inv.total,
+        currency=inv.currency,
+        customer_email=user.email,
+        success_url=settings.stripe_success_url,
+        cancel_url=settings.stripe_cancel_url,
+    )
+    return {"checkout_url": url}
+
+
+def _invoice_out(inv) -> dict:
+    return {
+        "id": str(inv.id),
+        "number": inv.number,
+        "user_id": str(inv.user_id),
+        "period": inv.period,
+        "currency": inv.currency,
+        "subtotal": inv.subtotal,
+        "vat": inv.vat,
+        "total": inv.total,
+        "status": inv.status,
+        "issued_at": inv.issued_at.isoformat() if inv.issued_at else None,
+        "due_at": inv.due_at.isoformat() if inv.due_at else None,
+        "paid_at": inv.paid_at.isoformat() if inv.paid_at else None,
+        "lines": inv.lines,
+    }

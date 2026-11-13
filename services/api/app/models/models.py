@@ -386,3 +386,37 @@ class QuizQuestion(Base):
     explanation: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     quiz: Mapped["Quiz"] = relationship(back_populates="questions")
+
+
+class Invoice(Base):
+    """Facture mensuelle d'un étudiant (refacturation de l'usage clé plateforme).
+
+    Cycle : draft -> sent -> paid | overdue | cancelled.
+    Le numéro est séquentiel et unique (FAC-YYYYMM-NNNN). Les montants sont figés
+    au moment de l'émission (snapshot), pour ne pas dépendre d'un changement de
+    tarif ultérieur.
+    """
+
+    __tablename__ = "invoices"
+    __table_args__ = (UniqueConstraint("number", name="uq_invoice_number"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    number: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    period: Mapped[str] = mapped_column(String(7), nullable=False, index=True)  # YYYY-MM
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="EUR")
+    subtotal: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    vat: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    total: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    # Détail des lignes (snapshot JSON : provider, kind, quantité, prix, montant)
+    lines: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", index=True)
+    issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Paiement en ligne (Stripe)
+    stripe_session_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stripe_payment_intent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
