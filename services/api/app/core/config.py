@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     quota_sheet_count: int = 100
     quota_alert_threshold: float = 0.8
 
+    # --- Facturation (refacturation de l'usage clé plateforme) ---
+    # Marge appliquée au coût réel du fournisseur (1.0 = à prix coûtant).
+    billing_markup: float = 1.0
+    # Devise d'affichage (les coûts sont stockés en USD).
+    billing_currency: str = "EUR"
+    # Taux USD -> devise d'affichage (indicatif, ajustable).
+    billing_usd_rate: float = 0.92
+
     # --- Détection d'abus ---
     abuse_max_courses_per_hour: int = 20
     abuse_max_distinct_ips: int = 3

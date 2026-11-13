@@ -1,6 +1,7 @@
 """Routes Admin : gestion utilisateurs, supervision jobs, statistiques."""
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AdminUser
+from app.core.config import settings
 from app.core.crypto import encrypt_secret, mask_secret
 from app.core.database import get_db
 from app.models import AuditLog, Course, Job, PlatformKey, User, UserApiKey
@@ -609,3 +611,81 @@ async def platform_accounts(
         select(PlatformKey.account_label).where(PlatformKey.account_label != "").distinct()
     )
     return [r for r in rows if r]
+
+
+# --- Facturation (refacturation de l'usage clé plateforme) ---
+
+
+@router.get("/billing")
+async def billing_report(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    year: int | None = None,
+    month: int | None = None,
+) -> dict:
+    """Rapport de facturation mensuel (usage clé plateforme, par utilisateur).
+
+    Par défaut : mois courant. `year`/`month` pour un mois précis.
+    """
+    from app.services import billing as billing_svc
+
+    now = datetime.now(UTC)
+    y = year or now.year
+    m = month or now.month
+    if not 1 <= m <= 12:
+        raise HTTPException(status_code=400, detail="month doit être entre 1 et 12")
+    report = await billing_svc.billing_report(db, y, m)
+    total_cost = round(sum(r["cost_usd"] for r in report), 4)
+    total_billed = round(sum(r["billed"] for r in report), 4)
+    return {
+        "period": f"{y:04d}-{m:02d}",
+        "currency": settings.billing_currency,
+        "markup": settings.billing_markup,
+        "users": report,
+        "total_cost_usd": total_cost,
+        "total_billed": total_billed,
+    }
+
+
+@router.get("/billing/{user_id}")
+async def user_billing(
+    user_id: uuid.UUID,
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    year: int | None = None,
+    month: int | None = None,
+) -> dict:
+    """Détail de facturation d'un utilisateur (lignes par provider/type)."""
+    from app.services import billing as billing_svc
+
+    now = datetime.now(UTC)
+    y = year or now.year
+    m = month or now.month
+    if not 1 <= m <= 12:
+        raise HTTPException(status_code=400, detail="month doit être entre 1 et 12")
+    return await billing_svc.user_billing(db, user_id, y, m)
+
+
+@router.get("/billing.csv")
+async def billing_csv(
+    _admin: AdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    year: int | None = None,
+    month: int | None = None,
+):
+    """Export CSV du rapport de facturation (pour tableur / facturation)."""
+    from fastapi.responses import PlainTextResponse
+
+    from app.services import billing as billing_svc
+
+    now = datetime.now(UTC)
+    y = year or now.year
+    m = month or now.month
+    if not 1 <= m <= 12:
+        raise HTTPException(status_code=400, detail="month doit être entre 1 et 12")
+    csv_data = await billing_svc.billing_csv(db, y, m)
+    return PlainTextResponse(
+        csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="facturation-{y:04d}-{m:02d}.csv"'},
+    )
