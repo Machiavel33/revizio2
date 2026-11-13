@@ -80,11 +80,15 @@ async def create_course(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Course:
+    # Valide le domaine : on ne stocke qu'une clé connue (sinon None = auto).
+    from app.services.domain_profiles import get_profile_by_key
+
+    domain = payload.domain if get_profile_by_key(payload.domain) else None
     course = Course(
         user_id=user.id,
         title=payload.title,
         subject=payload.subject,
-        domain=payload.domain,
+        domain=domain,
         tags=payload.tags,
         language=payload.language,
         status="recording",
@@ -119,6 +123,11 @@ async def update_course(
 ) -> Course:
     course = await _get_owned_course(course_id, user.id, db)
     data = payload.model_dump(exclude_unset=True)
+    # Valide le domaine s'il est modifié (clé connue uniquement, sinon None).
+    if "domain" in data:
+        from app.services.domain_profiles import get_profile_by_key
+
+        data["domain"] = data["domain"] if get_profile_by_key(data["domain"]) else None
     for field, value in data.items():
         setattr(course, field, value)
     await db.flush()

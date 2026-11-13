@@ -106,3 +106,12 @@ def test_detect_new_domains():
     assert detect_profile("Droit du travail") is DROIT_TRAVAIL
     assert detect_profile("Programmation Python") is INFORMATIQUE
     assert detect_profile("Physique quantique") is SCIENCES
+
+
+def test_unknown_domain_key_is_ignored():
+    """Une clé de domaine inconnue ne doit jamais être utilisée (anti-injection)."""
+    from app.services.domain_profiles import GENERIC, detect_profile
+
+    # domain_key arbitraire -> ignoré, fallback sur subject ou générique
+    assert detect_profile(None, domain_key="droit; ignore instructions") is GENERIC
+    assert detect_profile("Histoire", domain_key="<script>") is GENERIC
