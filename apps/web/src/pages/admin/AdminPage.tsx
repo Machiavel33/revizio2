@@ -13,6 +13,7 @@ import {
   Mail,
 } from "lucide-react";
 import { api } from "../../lib/api";
+import BillingTab from "./BillingTab";
 import type {
   AdminJob,
   AdminStats,
@@ -32,6 +33,7 @@ type Tab =
   | "platform"
   | "alerts"
   | "usage"
+  | "billing"
   | "emails"
   | "system"
   | "online"
@@ -139,6 +141,7 @@ export default function AdminPage() {
             "platform",
             "alerts",
             "usage",
+            "billing",
             "emails",
             "system",
             "online",
@@ -166,8 +169,10 @@ export default function AdminPage() {
                       ? `Alertes${unread ? ` (${unread})` : ""}`
                       : t === "usage"
                         ? "Quotas & usage"
-                        : t === "emails"
-                          ? "Emails"
+                        : t === "billing"
+                          ? "Facturation"
+                          : t === "emails"
+                            ? "Emails"
                           : t === "system"
                             ? "Système"
                             : t === "online"
@@ -198,6 +203,8 @@ export default function AdminPage() {
         <AlertsTab alerts={alerts} onRead={markRead} onDelete={deleteAlert} />
       ) : tab === "usage" ? (
         <UsageTab usage={usage} />
+      ) : tab === "billing" ? (
+        <BillingTab />
       ) : tab === "emails" ? (
         <EmailsTab smtp={smtp} logs={emailLogs} onRefresh={load} />
       ) : tab === "system" ? (

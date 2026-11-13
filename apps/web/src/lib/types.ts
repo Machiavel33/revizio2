@@ -274,3 +274,51 @@ export interface Quiz {
   created_at: string;
   questions: QuizQuestion[];
 }
+
+// --- Facturation ---
+export interface BillingLine {
+  provider: string;
+  kind: string;
+  calls: number;
+  audio_minutes: number;
+  input_tokens: number;
+  output_tokens: number;
+  unit_price: number;
+  amount: number;
+  cost_usd: number;
+}
+export interface BillingUser {
+  user_id: string;
+  email: string;
+  display_name: string;
+  calls: number;
+  cost_usd: number;
+  subtotal: number;
+  total: number;
+  capped: boolean;
+  currency: string;
+  margin_covered: boolean;
+}
+export interface BillingReport {
+  period: string;
+  currency: string;
+  markup: number;
+  users: BillingUser[];
+  total_cost_usd: number;
+  total_billed: number;
+}
+export interface Invoice {
+  id: string;
+  number: string;
+  user_id: string;
+  period: string;
+  currency: string;
+  subtotal: number;
+  vat: number;
+  total: number;
+  status: "draft" | "sent" | "paid" | "overdue" | "cancelled";
+  issued_at: string | null;
+  due_at: string | null;
+  paid_at: string | null;
+  lines: BillingLine[];
+}

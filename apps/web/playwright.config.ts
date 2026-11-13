@@ -23,7 +23,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm dev",
+    // VITE_API_URL absolu pour que les mocks page.route (http://localhost:8000)
+    // correspondent aux appels de l'app (sinon API_BASE="" -> URLs relatives).
+    command: "VITE_API_URL=http://localhost:8000 pnpm dev",
     url: "http://localhost:5173",
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

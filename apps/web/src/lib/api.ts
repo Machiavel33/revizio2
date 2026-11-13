@@ -5,12 +5,14 @@ import type {
   AdminStats,
   AdminUser,
   ApiKey,
+  BillingReport,
   Course,
   CourseDetail,
   Alert,
   DownloadItem,
   EmailLog,
   ExamFolder,
+  Invoice,
   KeyMode,
   OnlineInfo,
   PlatformKey,
@@ -240,6 +242,46 @@ export const api = {
   // Alertes
   adminDeleteAlert: (id: string) =>
     request<void>(`/api/admin/alerts/${id}`, { method: "DELETE" }),
+
+  // Facturation
+  adminBilling: (year?: number, month?: number) => {
+    const q = new URLSearchParams();
+    if (year) q.set("year", String(year));
+    if (month) q.set("month", String(month));
+    const qs = q.toString();
+    return request<BillingReport>(`/api/admin/billing${qs ? `?${qs}` : ""}`);
+  },
+  adminBillingCsvUrl: (year?: number, month?: number) => {
+    const q = new URLSearchParams();
+    if (year) q.set("year", String(year));
+    if (month) q.set("month", String(month));
+    const qs = q.toString();
+    return `${API_BASE}/api/admin/billing.csv${qs ? `?${qs}` : ""}`;
+  },
+  adminInvoices: (status?: string, period?: string) => {
+    const q = new URLSearchParams();
+    if (status) q.set("status_filter", status);
+    if (period) q.set("period", period);
+    const qs = q.toString();
+    return request<Invoice[]>(`/api/admin/invoices${qs ? `?${qs}` : ""}`);
+  },
+  adminGenerateInvoice: (userId: string, year?: number, month?: number) => {
+    const q = new URLSearchParams({ user_id: userId });
+    if (year) q.set("year", String(year));
+    if (month) q.set("month", String(month));
+    return request<Invoice>(`/api/admin/invoices/generate?${q.toString()}`, {
+      method: "POST",
+    });
+  },
+  adminIssueInvoice: (id: string) =>
+    request<Invoice>(`/api/admin/invoices/${id}/issue`, { method: "POST" }),
+  adminMarkInvoicePaid: (id: string) =>
+    request<Invoice>(`/api/admin/invoices/${id}/paid`, { method: "POST" }),
+  adminInvoicePdfUrl: (id: string) => `${API_BASE}/api/admin/invoices/${id}/pdf`,
+  adminInvoiceCheckout: (id: string) =>
+    request<{ checkout_url: string }>(`/api/admin/invoices/${id}/checkout`, {
+      method: "POST",
+    }),
 
   // Révision : fiches
   listSheets: () => request<Sheet[]>("/api/revision/sheets"),
