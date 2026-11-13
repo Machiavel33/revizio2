@@ -197,3 +197,31 @@ test("admin facturation : rapport + factures affichés", async ({ page }) => {
   await expect(page.getByText("Brouillon")).toBeVisible();
   await expect(page.getByRole("button", { name: /Émettre/ })).toBeVisible();
 });
+
+test("téléchargement : n'affiche que l'OS détecté par défaut", async ({ page }) => {
+  await login(page);
+  const downloads = [
+    { filename: "Revizio_0.1.0_amd64.deb", size: 6000000, os: "linux", arch: "x86_64", version: "0.1.0", url: "/api/downloads/Revizio_0.1.0_amd64.deb" },
+    { filename: "Revizio_0.1.0_x64_fr-FR.msi", size: 5800000, os: "windows", arch: "x86_64", version: "0.1.0", url: "/api/downloads/Revizio_0.1.0_x64_fr-FR.msi" },
+    { filename: "Revizio_0.1.0_aarch64.dmg", size: 5500000, os: "macos", arch: "aarch64", version: "0.1.0", url: "/api/downloads/Revizio_0.1.0_aarch64.dmg" },
+  ];
+  await page.route(`${API}/api/downloads`, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(downloads) }),
+  );
+  // Simule un visiteur Linux.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", { get: () => "Mozilla/5.0 (X11; Linux x86_64)" });
+    Object.defineProperty(navigator, "platform", { get: () => "Linux x86_64" });
+  });
+  await page.goto("/download");
+
+  // Linux visible, Windows/macOS masqués par défaut
+  await expect(page.getByText("Revizio_0.1.0_amd64.deb")).toBeVisible();
+  await expect(page.getByText("Revizio_0.1.0_x64_fr-FR.msi")).toHaveCount(0);
+  await expect(page.getByText("Revizio_0.1.0_aarch64.dmg")).toHaveCount(0);
+
+  // Le toggle révèle les autres
+  await page.getByRole("button", { name: /Voir les autres systèmes/ }).click();
+  await expect(page.getByText("Revizio_0.1.0_x64_fr-FR.msi")).toBeVisible();
+  await expect(page.getByText("Revizio_0.1.0_aarch64.dmg")).toBeVisible();
+});

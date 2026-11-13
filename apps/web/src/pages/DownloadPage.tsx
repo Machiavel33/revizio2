@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
-import { Download, Monitor, Apple, Terminal, Loader2 } from "lucide-react";
+import { Download, Monitor, Apple, Terminal, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { api } from "../lib/api";
 import type { DownloadItem } from "../lib/types";
 
-function detectOS(): string {
+/** Détecte l'OS du visiteur (best-effort, côté navigateur). */
+function detectOS(): "windows" | "macos" | "linux" | "unknown" {
   const ua = navigator.userAgent.toLowerCase();
-  if (ua.includes("win")) return "windows";
-  if (ua.includes("mac")) return "macos";
-  if (ua.includes("linux")) return "linux";
+  const platform = (navigator.platform || "").toLowerCase();
+  // iPad/iPhone ne peuvent pas installer l'app desktop : on les traite à part.
+  if (/iphone|ipad|ipod/.test(ua)) return "unknown";
+  if (ua.includes("win") || platform.includes("win")) return "windows";
+  if (ua.includes("mac") || platform.includes("mac")) return "macos";
+  if (ua.includes("linux") || ua.includes("x11") || platform.includes("linux")) return "linux";
   return "unknown";
 }
 
@@ -22,10 +26,13 @@ const OS_META: Record<string, { label: string; icon: typeof Monitor }> = {
   macos: { label: "macOS", icon: Apple },
 };
 
+const OS_ORDER = ["windows", "macos", "linux"] as const;
+
 export default function DownloadPage() {
   const [items, setItems] = useState<DownloadItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const os = detectOS();
 
   useEffect(() => {
@@ -37,6 +44,57 @@ export default function DownloadPage() {
   }, []);
 
   const byOS = (target: string) => items.filter((i) => i.os === target);
+  const currentList = os !== "unknown" ? byOS(os) : [];
+  const hasCurrent = currentList.length > 0;
+
+  // OS à afficher : le courant seul par défaut, tous si "voir les autres".
+  const visibleOS: string[] = showAll
+    ? [...OS_ORDER]
+    : hasCurrent
+      ? [os]
+      : [...OS_ORDER];
+
+  function renderOS(target: string) {
+    const list = byOS(target);
+    if (list.length === 0) return null;
+    const meta = OS_META[target];
+    if (!meta) return null;
+    const Icon = meta.icon;
+    const isCurrent = os === target;
+    return (
+      <div
+        key={target}
+        className={`card ${isCurrent ? "border-[color:var(--accent-primary)]/40" : ""}`}
+      >
+        <div className="mb-3 flex items-center gap-2">
+          <Icon size={18} className="text-[color:var(--accent-primary)]" />
+          <h2 className="font-display text-lg font-semibold">{meta.label}</h2>
+          {isCurrent && (
+            <span className="rounded bg-[color:var(--accent-primary)]/15 px-2 py-0.5 text-xs text-[color:var(--accent-primary)]">
+              votre système
+            </span>
+          )}
+        </div>
+        <div className="space-y-2">
+          {list.map((item) => (
+            <a
+              key={item.filename}
+              href={item.url}
+              className="flex items-center justify-between rounded-md bg-[color:var(--bg-inset)] px-3 py-2.5 transition-colors hover:bg-[color:var(--bg-elevated)]"
+            >
+              <div className="flex items-center gap-3">
+                <Download size={16} className="text-[color:var(--text-secondary)]" />
+                <span className="font-mono text-sm">{item.filename}</span>
+              </div>
+              <span className="text-xs text-[color:var(--text-muted)]">
+                v{item.version} · {fmtSize(item.size)}
+              </span>
+            </a>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-4xl p-8">
@@ -67,61 +125,52 @@ export default function DownloadPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {(["linux", "windows", "macos"] as const).map((target) => {
-            const list = byOS(target);
-            if (list.length === 0) return null;
-            const meta = OS_META[target];
-            const Icon = meta.icon;
-            const isCurrent = os === target;
-            return (
-              <div
-                key={target}
-                className={`card ${isCurrent ? "border-[color:var(--accent-primary)]/40" : ""}`}
-              >
-                <div className="mb-3 flex items-center gap-2">
-                  <Icon size={18} className="text-[color:var(--accent-primary)]" />
-                  <h2 className="font-display text-lg font-semibold">{meta.label}</h2>
-                  {isCurrent && (
-                    <span className="rounded bg-[color:var(--accent-primary)]/15 px-2 py-0.5 text-xs text-[color:var(--accent-primary)]">
-                      votre système
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  {list.map((item) => (
-                    <a
-                      key={item.filename}
-                      href={item.url}
-                      className="flex items-center justify-between rounded-md bg-[color:var(--bg-inset)] px-3 py-2.5 transition-colors hover:bg-[color:var(--bg-elevated)]"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Download size={16} className="text-[color:var(--text-secondary)]" />
-                        <span className="font-mono text-sm">{item.filename}</span>
-                      </div>
-                      <span className="text-xs text-[color:var(--text-muted)]">
-                        v{item.version} · {fmtSize(item.size)}
-                      </span>
-                    </a>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+          {/* Message contextuel selon l'OS détecté */}
+          {os === "unknown" && (
+            <p className="rounded-md bg-[color:var(--bg-inset)] px-4 py-3 text-sm text-[color:var(--text-secondary)]">
+              Nous n'avons pas pu détecter votre système. Choisissez votre plateforme ci-dessous.
+            </p>
+          )}
+          {os !== "unknown" && !hasCurrent && (
+            <p className="rounded-md bg-[color:var(--accent-warning)]/10 px-4 py-3 text-sm text-[color:var(--accent-warning)]">
+              Aucun installeur n'est disponible pour votre système ({OS_META[os]?.label}). Voici
+              les autres plateformes.
+            </p>
+          )}
+
+          {visibleOS.map((target) => renderOS(target))}
+
+          {/* Toggle : voir les autres systèmes */}
+          {hasCurrent && (
+            <button
+              onClick={() => setShowAll((v) => !v)}
+              className="btn-secondary w-full justify-center"
+            >
+              {showAll ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              {showAll ? "Masquer les autres systèmes" : "Voir les autres systèmes"}
+            </button>
+          )}
 
           <div className="card">
             <h2 className="mb-2 font-display text-lg font-semibold">Installation</h2>
             <ul className="space-y-1 text-sm text-[color:var(--text-secondary)]">
               <li>
-                <strong>Linux (.deb)</strong> : <code className="font-mono text-xs">sudo dpkg -i Revizio_*.deb</code>
+                <strong>Linux (.deb)</strong> :{" "}
+                <code className="font-mono text-xs">sudo dpkg -i Revizio_*.deb</code>
               </li>
               <li>
-                <strong>Linux (.AppImage)</strong> : <code className="font-mono text-xs">chmod +x Revizio_*.AppImage && ./Revizio_*.AppImage</code>
+                <strong>Linux (.AppImage)</strong> :{" "}
+                <code className="font-mono text-xs">
+                  chmod +x Revizio_*.AppImage && ./Revizio_*.AppImage
+                </code>
               </li>
               <li>
-                <strong>Windows</strong> : double-clic sur le <code className="font-mono text-xs">.msi</code>
+                <strong>Windows</strong> : double-clic sur le{" "}
+                <code className="font-mono text-xs">.msi</code>
               </li>
               <li>
-                <strong>macOS</strong> : ouvrir le <code className="font-mono text-xs">.dmg</code> et glisser dans Applications
+                <strong>macOS</strong> : ouvrir le <code className="font-mono text-xs">.dmg</code>{" "}
+                et glisser dans Applications
               </li>
             </ul>
           </div>
