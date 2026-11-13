@@ -65,11 +65,54 @@ async def test_user_billing_lines(db):
     assert detail["period"] == f"{now.year:04d}-{now.month:02d}"
     kinds = {line["kind"] for line in detail["lines"]}
     assert kinds == {"sheet", "transcribe"}
-    # Prix publics : 1 fiche (0.05) + 120s audio (0.30/h -> 0.01) = 0.06
-    assert abs(detail["subtotal"] - 0.06) < 1e-6
+    # Prix publics : 1 fiche (0.02) + 120s audio CLOUD (0.10/h -> 0.0033) = 0.0233
+    assert abs(detail["subtotal"] - 0.0233) < 1e-3
     assert detail["total"] == detail["base"] + detail["vat"]
     assert "real_cost_usd" in detail
     assert "margin_covered" in detail
+    assert "capped" in detail
+
+
+async def test_local_transcription_is_free(db):
+    """La transcription LOCALE ne coûte rien à l'étudiant."""
+    u = User(email="local@test.fr", display_name="Local", password_hash="x")
+    db.add(u)
+    await db.flush()
+    now = datetime.now(UTC)
+    db.add(
+        UsageRecord(
+            user_id=u.id, kind="transcribe", provider="local", key_source="platform",
+            audio_seconds=3600, cost_usd=0.0, created_at=now,
+        )
+    )
+    await db.flush()
+    detail = await billing.user_billing(db, u.id, now.year, now.month)
+    assert detail["subtotal"] == 0.0
+    assert detail["total"] == 0.0
+
+
+async def test_monthly_cap(db, monkeypatch):
+    """Le plafond mensuel protège l'étudiant (jamais de facture surprise)."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "billing_max_monthly", 1.0)
+    u = User(email="cap@test.fr", display_name="Cap", password_hash="x")
+    db.add(u)
+    await db.flush()
+    now = datetime.now(UTC)
+    # 100 fiches = 2.00 EUR > plafond 1.00
+    for _ in range(100):
+        db.add(
+            UsageRecord(
+                user_id=u.id, kind="sheet", provider="openai", key_source="platform",
+                input_tokens=1000, output_tokens=500, cost_usd=0.015, created_at=now,
+            )
+        )
+    await db.flush()
+    detail = await billing.user_billing(db, u.id, now.year, now.month)
+    assert detail["subtotal"] == 2.0
+    assert detail["base"] == 1.0  # plafonné
+    assert detail["capped"] is True
 
 
 async def test_billing_csv(db):

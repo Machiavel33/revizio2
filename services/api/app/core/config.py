@@ -68,19 +68,26 @@ class Settings(BaseSettings):
     quota_alert_threshold: float = 0.8
 
     # --- Facturation (refacturation de l'usage clé plateforme) ---
-    # Modèle : prix publics simples (compréhensibles) avec marge intégrée,
-    # plutôt qu'un coût brut × marge opaque. Compromis : l'étudiant paie un
-    # prix juste et prévisible, l'établissement couvre ses coûts + une marge.
+    # Modèle JUSTE : on ne facture que ce qui coûte réellement.
+    # - La transcription audio est LOCALE (Whisper, gratuit) -> facturée 0 €.
+    #   (Le cloud n'est qu'un fallback ; s'il est utilisé, il est facturé au coût.)
+    # - Les fiches/quiz IA coûtent des tokens -> facturés au coût réel + petite marge.
+    # - Un PLAFOND MENSUEL dur protège l'étudiant : jamais de facture surprise.
     #
-    # Prix publics (dans la devise d'affichage) :
-    # - par heure d'audio transcrite (clé plateforme)
-    billing_price_per_audio_hour: float = 0.30
-    # - par fiche de révision générée (clé plateforme)
-    billing_price_per_sheet: float = 0.05
+    # Prix publics (devise d'affichage) :
+    # - par heure d'audio transcrite EN LOCAL (gratuit) : 0 par défaut.
+    billing_price_per_audio_hour: float = 0.0
+    # - par heure d'audio transcrite via CLOUD (fallback payant) : au coût.
+    billing_price_per_audio_hour_cloud: float = 0.10
+    # - par fiche de révision générée (coût réel ~0.015 €, marge légère)
+    billing_price_per_sheet: float = 0.02
     # - par quiz généré
-    billing_price_per_quiz: float = 0.03
+    billing_price_per_quiz: float = 0.015
     # Plancher de facturation mensuelle (0 = pas de minimum).
     billing_min_monthly: float = 0.0
+    # PLAFOND mensuel dur : au-delà, la facturation est plafonnée (protection
+    # étudiant). 0 = pas de plafond. Ex. 5.0 = jamais plus de 5 €/mois.
+    billing_max_monthly: float = 5.0
     # Marge de sécurité appliquée au coût réel (garde-fou si les prix publics
     # sous-estiment le coût fournisseur). 1.0 = pas de garde-fou.
     billing_markup: float = 1.0

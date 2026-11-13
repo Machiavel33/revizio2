@@ -31,10 +31,20 @@ def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
     return start, end
 
 
-def _public_price(kind: str, audio_seconds: float, calls: int) -> float:
-    """Prix public d'une ligne selon le type d'usage (devise d'affichage)."""
+def _public_price(kind: str, audio_seconds: float, calls: int, provider: str = "") -> float:
+    """Prix public d'une ligne selon le type d'usage (devise d'affichage).
+
+    La transcription LOCALE (provider='local') est gratuite : on ne facture que
+    le cloud (fallback payant). Les fiches/quiz sont facturés à l'unité.
+    """
     if kind == "transcribe":
-        return round((audio_seconds / 3600.0) * settings.billing_price_per_audio_hour, 4)
+        # Local = gratuit ; cloud = facturé à l'heure.
+        rate = (
+            settings.billing_price_per_audio_hour_cloud
+            if provider and provider != "local"
+            else settings.billing_price_per_audio_hour
+        )
+        return round((audio_seconds / 3600.0) * rate, 4)
     if kind == "sheet":
         return round(calls * settings.billing_price_per_sheet, 4)
     if kind == "quiz":
@@ -42,12 +52,20 @@ def _public_price(kind: str, audio_seconds: float, calls: int) -> float:
     return 0.0
 
 
-def _apply_floor_and_vat(subtotal: float) -> tuple[float, float, float]:
-    """Applique le plancher mensuel et la TVA. Retourne (base, tva, total)."""
+def _apply_floor_cap_and_vat(subtotal: float) -> tuple[float, float, float, bool]:
+    """Applique plancher, PLAFOND mensuel et TVA.
+
+    Retourne (base, tva, total, capped). Le plafond protège l'étudiant : au-delà
+    de `billing_max_monthly`, la base est plafonnée (jamais de facture surprise).
+    """
     base = max(subtotal, settings.billing_min_monthly)
+    capped = False
+    if settings.billing_max_monthly > 0 and base > settings.billing_max_monthly:
+        base = settings.billing_max_monthly
+        capped = True
     vat = round(base * settings.billing_vat_rate, 4)
     total = round(base + vat, 4)
-    return round(base, 4), vat, total
+    return round(base, 4), vat, total, capped
 
 
 async def user_billing(db: AsyncSession, user_id: uuid.UUID, year: int, month: int) -> dict:
@@ -81,7 +99,7 @@ async def user_billing(db: AsyncSession, user_id: uuid.UUID, year: int, month: i
         calls = int(calls)
         audio_s = float(audio_s or 0)
         cost = float(cost or 0)
-        price = _public_price(kind, audio_s, calls)
+        price = _public_price(kind, audio_s, calls, provider)
         subtotal += price
         real_cost += cost
         lines.append(
@@ -92,13 +110,13 @@ async def user_billing(db: AsyncSession, user_id: uuid.UUID, year: int, month: i
                 "audio_minutes": round(audio_s / 60.0, 1),
                 "input_tokens": int(in_tok or 0),
                 "output_tokens": int(out_tok or 0),
-                "unit_price": _unit_price(kind),
+                "unit_price": _unit_price(kind, provider),
                 "amount": price,
                 "cost_usd": round(cost, 4),
             }
         )
 
-    base, vat, total = _apply_floor_and_vat(subtotal)
+    base, vat, total, capped = _apply_floor_cap_and_vat(subtotal)
     # Garde-fou : le prix public couvre-t-il le coût réel (avec marge) ?
     covered = (real_cost * settings.billing_markup * settings.billing_usd_rate) <= base
     return {
@@ -109,15 +127,21 @@ async def user_billing(db: AsyncSession, user_id: uuid.UUID, year: int, month: i
         "base": base,
         "vat": vat,
         "total": total,
+        "capped": capped,
+        "max_monthly": settings.billing_max_monthly,
         "currency": settings.billing_currency,
         "real_cost_usd": round(real_cost, 4),
         "margin_covered": covered,
     }
 
 
-def _unit_price(kind: str) -> float:
+def _unit_price(kind: str, provider: str = "") -> float:
     if kind == "transcribe":
-        return settings.billing_price_per_audio_hour
+        return (
+            settings.billing_price_per_audio_hour_cloud
+            if provider and provider != "local"
+            else settings.billing_price_per_audio_hour
+        )
     if kind == "sheet":
         return settings.billing_price_per_sheet
     if kind == "quiz":
@@ -160,6 +184,7 @@ async def billing_report(db: AsyncSession, year: int, month: int) -> list[dict]:
                 "cost_usd": round(float(cost or 0), 4),
                 "subtotal": detail["subtotal"],
                 "total": detail["total"],
+                "capped": detail["capped"],
                 "currency": settings.billing_currency,
                 "margin_covered": detail["margin_covered"],
             }
