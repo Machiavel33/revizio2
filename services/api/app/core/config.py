@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     # localement. Vide = transcription locale dans le processus API (legacy).
     stt_service_url: str = ""
     stt_service_timeout: int = 300
+    # Secret partagé avec le service STT (X-STT-Token / ?token=). Vide = pas d'auth.
+    stt_shared_secret: str = ""
 
     # --- RGPD : rétention audio ---
     # Supprime l'audio brut après transcription réussie (donnée personnelle).

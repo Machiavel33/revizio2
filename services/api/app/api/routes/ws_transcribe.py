@@ -339,6 +339,8 @@ async def _run_streaming(
     stt_ws = settings.stt_service_url.replace("http://", "ws://").replace(
         "https://", "wss://"
     ).rstrip("/") + "/stream"
+    if settings.stt_shared_secret:
+        stt_ws += f"?token={settings.stt_shared_secret}"
     session_id = uuid.uuid4()
 
     try:

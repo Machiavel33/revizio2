@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # Active le moteur streaming (sinon /stream renvoie 503).
     sherpa_enabled: bool = True
 
+    # --- Sécurité ---
+    # Secret partagé avec l'API (X-STT-Token / ?token=). Vide = pas d'auth (dev).
+    stt_shared_secret: str = ""
+
     # --- Limites ---
     max_upload_bytes: int = 200 * 1024 * 1024  # 200 Mo
 

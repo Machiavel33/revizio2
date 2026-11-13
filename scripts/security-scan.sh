@@ -93,6 +93,20 @@ else
   fail "Rate-limiting manquant"
 fi
 
+# --- Service STT (découplé) ---
+if [ -f services/stt/app/main.py ]; then
+  if grep -q "SecurityHeadersMiddleware" services/stt/app/main.py; then
+    ok "STT: en-têtes de sécurité actifs"
+  else
+    fail "STT: en-têtes de sécurité manquants"
+  fi
+  if grep -q "SharedSecretMiddleware" services/stt/app/main.py; then
+    ok "STT: authentification par secret partagé"
+  else
+    fail "STT: secret partagé manquant"
+  fi
+fi
+
 # ---------------------------------------------------------------
 printf "\n"
 if [ "$FAIL" -eq 0 ]; then

@@ -24,11 +24,15 @@ async def transcribe_bytes(audio: bytes, language: str = "fr") -> dict:
     """Transcrit un blob audio complet. Délègue au service STT si configuré."""
     if use_remote():
         url = settings.stt_service_url.rstrip("/") + "/transcribe"
+        headers = {}
+        if settings.stt_shared_secret:
+            headers["X-STT-Token"] = settings.stt_shared_secret
         async with httpx.AsyncClient(timeout=settings.stt_service_timeout) as client:
             resp = await client.post(
                 url,
                 files={"file": ("audio.bin", audio, "application/octet-stream")},
                 data={"language": language},
+                headers=headers,
             )
             resp.raise_for_status()
             return resp.json()

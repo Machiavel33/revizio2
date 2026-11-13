@@ -142,3 +142,47 @@ def test_sherpa_close_session():
     assert any(e.kind == "final" for e in evs)
     # Session retirée
     assert eng.close_session(sid) == []
+
+
+# --- Sécurité : secret partagé + en-têtes ---
+
+
+@pytest.mark.asyncio
+async def test_security_headers_present(client):
+    async with client as c:
+        r = await c.get("/health")
+    assert r.headers.get("x-content-type-options") == "nosniff"
+    assert r.headers.get("x-frame-options") == "DENY"
+
+
+@pytest.mark.asyncio
+async def test_shared_secret_enforced(monkeypatch):
+    """Avec un secret configuré, /transcribe exige X-STT-Token."""
+    from fastapi import FastAPI
+
+    from app.core import security
+
+    # Reconstruit l'app avec un secret pour ce test.
+    test_app = FastAPI()
+    test_app.add_middleware(security.SharedSecretMiddleware, secret="s3cret")
+
+    @test_app.get("/protected")
+    async def protected():
+        return {"ok": True}
+
+    @test_app.get("/health")
+    async def health():
+        return {"status": "ok"}
+
+    transport = ASGITransport(app=test_app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        # /health public
+        assert (await c.get("/health")).status_code == 200
+        # /protected sans token -> 401
+        assert (await c.get("/protected")).status_code == 401
+        # avec bon token -> 200
+        r = await c.get("/protected", headers={"X-STT-Token": "s3cret"})
+        assert r.status_code == 200
+        # mauvais token -> 401
+        r = await c.get("/protected", headers={"X-STT-Token": "wrong"})
+        assert r.status_code == 401

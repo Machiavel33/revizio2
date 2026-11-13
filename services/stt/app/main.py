@@ -23,6 +23,7 @@ from fastapi import (
 )
 
 from app.core.config import settings
+from app.core.security import SecurityHeadersMiddleware, SharedSecretMiddleware
 from app.engines import sherpa, whisper
 
 logging.basicConfig(level=logging.INFO)
@@ -35,6 +36,10 @@ app = FastAPI(
     docs_url=None if settings.is_production else "/docs",
     openapi_url=None if settings.is_production else "/openapi.json",
 )
+
+# Durcissement : en-têtes de sécurité + secret partagé avec l'API.
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(SharedSecretMiddleware, secret=settings.stt_shared_secret)
 
 
 @app.get("/health")
