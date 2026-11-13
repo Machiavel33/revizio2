@@ -85,6 +85,9 @@ export interface StudySheetContent {
   flashcards: Flashcard[];
   review_questions: string[];
   estimated_review_time_min: number;
+  domain?: string;
+  domain_label?: string;
+  disclaimer?: string;
 }
 export interface StudySheet {
   id: string;

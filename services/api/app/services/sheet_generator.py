@@ -147,6 +147,7 @@ async def generate_sheet_anthropic(
     api_key: str,
     language: str = "fr",
     model: str = "claude-3-5-sonnet-latest",
+    domain_block: str = "",
 ) -> dict:
     headers = {
         "x-api-key": api_key,
@@ -156,7 +157,7 @@ async def generate_sheet_anthropic(
     body = {
         "model": model,
         "max_tokens": 4096,
-        "system": SYSTEM_PROMPT,
+        "system": SYSTEM_PROMPT + domain_block,
         "messages": [{"role": "user", "content": _build_user_prompt(transcript, language)}],
     }
     async with httpx.AsyncClient(timeout=300) as client:
@@ -175,12 +176,13 @@ async def generate_sheet_openai(
     api_key: str,
     language: str = "fr",
     model: str = "gpt-4o",
+    domain_block: str = "",
 ) -> dict:
     headers = {"Authorization": f"Bearer {api_key}", "content-type": "application/json"}
     body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPT + domain_block},
             {"role": "user", "content": _build_user_prompt(transcript, language)},
         ],
         "response_format": {"type": "json_object"},
@@ -275,12 +277,29 @@ async def generate_sheet(
     provider: str,
     api_key: str,
     language: str = "fr",
+    subject: str | None = None,
 ) -> dict:
+    """Génère une fiche. `subject` sélectionne le profil d'encadrement du domaine."""
+    from app.services.domain_profiles import build_domain_instructions, detect_profile
+
+    profile = detect_profile(subject)
+    domain_block = build_domain_instructions(profile)
+
     if provider == "anthropic":
-        result = await generate_sheet_anthropic(transcript, api_key, language=language)
+        result = await generate_sheet_anthropic(
+            transcript, api_key, language=language, domain_block=domain_block
+        )
     elif provider == "openai":
-        result = await generate_sheet_openai(transcript, api_key, language=language)
+        result = await generate_sheet_openai(
+            transcript, api_key, language=language, domain_block=domain_block
+        )
     else:
         raise ValueError(f"Provider de génération non supporté: {provider}")
-    result["content"] = normalize_sheet(result.get("content", {}))
+
+    content = normalize_sheet(result.get("content", {}))
+    # Avertissement du domaine (affiché dans la fiche).
+    content["domain"] = profile.key
+    content["domain_label"] = profile.label
+    content["disclaimer"] = profile.disclaimer
+    result["content"] = content
     return result

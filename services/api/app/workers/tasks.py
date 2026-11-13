@@ -211,7 +211,11 @@ async def _run_generate_sheet(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
                 raise ValueError("Aucune clé API de génération configurée")
 
             result = await generate_sheet(
-                transcript.full_text, provider=provider, api_key=api_key, language=course.language
+                transcript.full_text,
+                provider=provider,
+                api_key=api_key,
+                language=course.language,
+                subject=course.subject,
             )
 
             sheet = await db.scalar(select(StudySheet).where(StudySheet.course_id == course_id))

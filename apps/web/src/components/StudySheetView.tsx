@@ -80,12 +80,27 @@ export default function StudySheetView({ sheet }: { sheet: StudySheet }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="font-display text-2xl font-bold">{c.title || "Fiche de révision"}</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="font-display text-2xl font-bold">{c.title || "Fiche de révision"}</h2>
+          {c.domain_label && c.domain && c.domain !== "generic" && (
+            <span className="rounded bg-[color:var(--accent-primary)]/15 px-2 py-0.5 text-xs font-semibold uppercase text-[color:var(--accent-primary)]">
+              {c.domain_label}
+            </span>
+          )}
+        </div>
         <button onClick={handleExport} disabled={exporting} className="btn-secondary">
           <Download size={16} />
           {exporting ? "Export…" : "Exporter en PDF"}
         </button>
       </div>
+
+      {/* Avertissement du domaine (garde-fou) */}
+      {c.disclaimer && (
+        <div className="flex gap-2 rounded-md border border-[color:var(--accent-warning)]/40 bg-[color:var(--accent-warning)]/10 p-3 text-sm text-[color:var(--text-secondary)]">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-[color:var(--accent-warning)]" />
+          <p>{c.disclaimer}</p>
+        </div>
+      )}
 
       {/* Objectifs d'apprentissage */}
       {c.learning_objectives && c.learning_objectives.length > 0 && (
