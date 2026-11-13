@@ -819,6 +819,13 @@ async def invoice_checkout(
         raise HTTPException(status_code=404, detail="Facture introuvable")
     if inv.status == "paid":
         raise HTTPException(status_code=400, detail="Facture déjà payée")
+    if inv.status not in ("sent", "overdue"):
+        raise HTTPException(
+            status_code=400,
+            detail="La facture doit être émise (sent/overdue) avant paiement en ligne",
+        )
+    if inv.total <= 0:
+        raise HTTPException(status_code=400, detail="Montant de facture invalide")
     user = await db.get(User, inv.user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")

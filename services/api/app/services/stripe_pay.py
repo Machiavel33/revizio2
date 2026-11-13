@@ -16,7 +16,18 @@ logger = logging.getLogger("revizio.stripe")
 
 
 def enabled() -> bool:
+    """Paiement en ligne activé (clé secrète Stripe présente)."""
     return bool(settings.stripe_secret_key)
+
+
+def webhook_enabled() -> bool:
+    """Webhook activé : exige AUSSI le secret de signature (sinon on refuse).
+
+    Sans secret de webhook, la vérification de signature est impossible : on
+    refuse de traiter l'événement plutôt que de risquer d'accepter un faux
+    paiement (défense en profondeur).
+    """
+    return bool(settings.stripe_secret_key and settings.stripe_webhook_secret)
 
 
 def _client():

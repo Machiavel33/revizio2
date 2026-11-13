@@ -6,6 +6,7 @@ correspondante passe en `paid`.
 """
 
 import logging
+import uuid
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -20,8 +21,10 @@ router = APIRouter(prefix="/stripe", tags=["stripe"])
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request) -> dict:
-    if not stripe_pay.enabled():
-        raise HTTPException(status_code=503, detail="Stripe non configuré")
+    if not stripe_pay.webhook_enabled():
+        # Refus si la clé OU le secret de webhook manque : on ne peut pas vérifier
+        # la signature, donc on n'accepte aucun événement (anti-faux-paiement).
+        raise HTTPException(status_code=503, detail="Webhook Stripe non configuré")
     payload = await request.body()
     sig = request.headers.get("stripe-signature", "")
     try:
@@ -33,16 +36,19 @@ async def stripe_webhook(request: Request) -> dict:
         ) from exc
 
     if event.get("type") == "checkout.session.completed":
-        session = event["data"]["object"]
+        session = (event.get("data") or {}).get("object") or {}
         invoice_id = (session.get("metadata") or {}).get("invoice_id")
         if invoice_id:
-            import uuid
-
+            try:
+                inv_uuid = uuid.UUID(invoice_id)
+            except (ValueError, TypeError):
+                logger.warning("invoice_id invalide dans le webhook: %r", invoice_id)
+                return {"received": True}
             async with AsyncSessionLocal() as db:
                 try:
                     await inv_svc.mark_paid(
                         db,
-                        uuid.UUID(invoice_id),
+                        inv_uuid,
                         stripe_session_id=session.get("id"),
                         stripe_payment_intent=session.get("payment_intent"),
                     )
