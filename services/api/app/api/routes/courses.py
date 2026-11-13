@@ -54,6 +54,14 @@ async def _get_owned_course(course_id: uuid.UUID, user_id: uuid.UUID, db: AsyncS
     return course
 
 
+@router.get("/domains")
+async def list_domains() -> list[dict]:
+    """Liste des domaines d'encadrement IA disponibles (pour le sélecteur)."""
+    from app.services.domain_profiles import list_profiles
+
+    return list_profiles()
+
+
 @router.get("", response_model=list[CourseOut])
 async def list_courses(
     user: CurrentUser,
@@ -76,6 +84,7 @@ async def create_course(
         user_id=user.id,
         title=payload.title,
         subject=payload.subject,
+        domain=payload.domain,
         tags=payload.tags,
         language=payload.language,
         status="recording",

@@ -193,11 +193,159 @@ SANTE = DomainProfile(
     keywords=("sante", "soin", "infirmier", "aide-soignant", "medical", "protocole de soin"),
 )
 
-PROFILES: tuple[DomainProfile, ...] = (DROIT, EPS, EDUC_SPEC, POLICE, SANTE)
+COMPTA = DomainProfile(
+    key="compta",
+    label="Comptabilité / Gestion",
+    role=(
+        "expert-comptable et formateur en comptabilité et gestion, rigoureux sur les "
+        "normes comptables (PCG, IFRS) et les mécanismes d'écriture"
+    ),
+    rules=[
+        "Ne cite aucun numéro de compte, taux, seuil ou norme absent de la transcription.",
+        "Respecte la logique débit/crédit et l'équilibre du bilan.",
+        "Distingue charges et immobilisations, résultat et trésorerie.",
+        "Signale les règles fiscales comme « à vérifier » (évolutives).",
+    ],
+    pitfalls=[
+        "Confondre charge et immobilisation.",
+        "Inverser débit et crédit.",
+        "Confondre résultat comptable et trésorerie.",
+        "Inventer un taux de TVA ou un seuil fiscal.",
+    ],
+    disclaimer=(
+        "Fiche pédagogique : elle ne constitue pas un conseil comptable ou fiscal. "
+        "Vérifiez les normes et taux en vigueur auprès d'un expert-comptable."
+    ),
+    keywords=("comptabilite", "compta", "gestion", "bilan", "comptable", "pcg", "ifrs"),
+)
+
+DROIT_TRAVAIL = DomainProfile(
+    key="droit_travail",
+    label="Droit du travail",
+    role=(
+        "juriste spécialisé en droit du travail français, rigoureux sur le Code du "
+        "travail, les conventions collectives et la jurisprudence sociale"
+    ),
+    rules=[
+        "Ne cite JAMAIS un article du Code du travail ou une jurisprudence "
+        "absent de la transcription.",
+        "Distingue le Code du travail, la convention collective et l'accord d'entreprise.",
+        "Respecte l'ordre public social (le plus favorable s'applique).",
+        "Signale les réformes récentes comme « à vérifier ».",
+    ],
+    pitfalls=[
+        "Inventer un article du Code du travail.",
+        "Confondre licenciement pour motif personnel et économique.",
+        "Oublier la hiérarchie des sources (loi / convention / accord).",
+        "Confondre CDD et intérim.",
+    ],
+    disclaimer=(
+        "Fiche pédagogique : elle ne constitue pas un conseil juridique. "
+        "Vérifiez le Code du travail et la convention collective applicables."
+    ),
+    keywords=("droit du travail", "code du travail", "licenciement", "cdi", "cdd", "prud"),
+)
+
+INFORMATIQUE = DomainProfile(
+    key="informatique",
+    label="Informatique / Numérique",
+    role=(
+        "ingénieur logiciel et formateur en informatique, rigoureux sur les concepts, "
+        "la sécurité et les bonnes pratiques"
+    ),
+    rules=[
+        "Ne cite aucune API, version, CVE ou commande absente de la transcription "
+        "sans le préciser.",
+        "Distingue concept théorique et implémentation pratique.",
+        "Signale les bonnes pratiques de sécurité (validation, moindre privilège).",
+        "Le code montré doit être correct et minimal ; signale les raccourcis.",
+    ],
+    pitfalls=[
+        "Inventer une API ou une version.",
+        "Confondre concept et implémentation.",
+        "Omettre les risques de sécurité.",
+        "Donner du code non testé comme s'il était validé.",
+    ],
+    disclaimer=(
+        "Fiche pédagogique : le code et les commandes doivent être testés dans un "
+        "environnement adapté avant tout usage en production."
+    ),
+    keywords=(
+        "informatique", "programmation", "developpement", "algorithme", "python",
+        "javascript", "reseau", "base de donnees", "cybersecurite",
+    ),
+)
+
+SCIENCES = DomainProfile(
+    key="sciences",
+    label="Sciences",
+    role=(
+        "professeur de sciences (mathématiques, physique, chimie, biologie), rigoureux "
+        "sur les définitions, unités et démonstrations"
+    ),
+    rules=[
+        "Ne cite aucune valeur numérique, constante ou formule absente de la transcription.",
+        "Respecte les unités et les ordres de grandeur.",
+        "Distingue hypothèse, modèle et résultat expérimental.",
+        "Les démonstrations doivent être logiques et complètes.",
+    ],
+    pitfalls=[
+        "Inventer une constante ou une valeur.",
+        "Omettre les unités.",
+        "Confondre modèle et réalité.",
+        "Sauter des étapes de démonstration.",
+    ],
+    disclaimer=(
+        "Fiche pédagogique : vérifiez les valeurs et formules auprès de vos supports "
+        "de cours officiels."
+    ),
+    keywords=(
+        "mathematiques", "maths", "physique", "chimie", "biologie", "svt",
+        "sciences", "geometrie", "algebre",
+    ),
+)
+
+# Ordre important : les domaines les plus spécifiques d'abord (ex. « droit du
+# travail » avant « droit »), car la détection s'arrête au premier mot-clé trouvé.
+PROFILES: tuple[DomainProfile, ...] = (
+    DROIT_TRAVAIL,
+    DROIT,
+    EPS,
+    EDUC_SPEC,
+    POLICE,
+    SANTE,
+    COMPTA,
+    INFORMATIQUE,
+    SCIENCES,
+)
 
 
-def detect_profile(subject: str | None) -> DomainProfile:
-    """Retourne le profil de domaine correspondant au `subject` (ou générique)."""
+def list_profiles() -> list[dict]:
+    """Liste des domaines disponibles (pour le sélecteur côté front)."""
+    return [{"key": p.key, "label": p.label} for p in (GENERIC, *PROFILES)]
+
+
+def get_profile_by_key(key: str | None) -> DomainProfile | None:
+    """Retourne un profil par sa clé (sélection explicite), ou None."""
+    if not key:
+        return None
+    if key == "generic":
+        return GENERIC
+    for profile in PROFILES:
+        if profile.key == key:
+            return profile
+    return None
+
+
+def detect_profile(subject: str | None, domain_key: str | None = None) -> DomainProfile:
+    """Retourne le profil de domaine.
+
+    Priorité : sélection explicite (`domain_key`) > détection par mots-clés sur
+    `subject` > générique.
+    """
+    explicit = get_profile_by_key(domain_key)
+    if explicit is not None:
+        return explicit
     if not subject:
         return GENERIC
     s = _norm(subject)

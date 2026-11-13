@@ -216,6 +216,7 @@ async def _run_generate_sheet(course_id: uuid.UUID, job_id: uuid.UUID) -> None:
                 api_key=api_key,
                 language=course.language,
                 subject=course.subject,
+                domain_key=course.domain,
             )
 
             sheet = await db.scalar(select(StudySheet).where(StudySheet.course_id == course_id))

@@ -107,6 +107,8 @@ class Course(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="Cours sans titre")
     subject: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Domaine d'encadrement IA explicite (droit, eps, police…) ; vide = auto.
+    domain: Mapped[str | None] = mapped_column(String(40), nullable=True)
     tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     language: Mapped[str] = mapped_column(String(10), nullable=False, default="fr")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="recording")

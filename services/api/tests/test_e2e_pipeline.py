@@ -27,7 +27,9 @@ def mock_ai(monkeypatch):
             "model": "whisper-1",
         }
 
-    async def fake_generate_sheet(transcript, provider, api_key, language="fr", subject=None):
+    async def fake_generate_sheet(
+        transcript, provider, api_key, language="fr", subject=None, domain_key=None
+    ):
         return {
             "content": {
                 "title": "Droit constitutionnel — la Constitution",

@@ -12,6 +12,8 @@ CourseStatus = Literal["recording", "transcribing", "generating", "ready", "fail
 class CourseCreate(BaseModel):
     title: str = Field(default="Cours sans titre", max_length=255)
     subject: str | None = Field(default=None, max_length=120)
+    # Domaine d'encadrement IA explicite (droit, eps, police…) ; vide = auto.
+    domain: str | None = Field(default=None, max_length=40)
     tags: list[str] = []
     language: str = Field(default="fr", max_length=10)
 
@@ -19,6 +21,7 @@ class CourseCreate(BaseModel):
 class CourseUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=255)
     subject: str | None = Field(default=None, max_length=120)
+    domain: str | None = Field(default=None, max_length=40)
     tags: list[str] | None = None
     status: CourseStatus | None = None
     duration_sec: int | None = Field(default=None, ge=0)
@@ -30,6 +33,7 @@ class CourseOut(BaseModel):
     id: uuid.UUID
     title: str
     subject: str | None
+    domain: str | None = None
     tags: list[str] = []
     language: str
     status: str

@@ -118,10 +118,11 @@ export const api = {
 
   // Courses
   listCourses: () => request<Course[]>("/api/courses"),
-  createCourse: (title: string, subject?: string, language = "fr") =>
+  listDomains: () => request<{ key: string; label: string }[]>("/api/courses/domains"),
+  createCourse: (title: string, subject?: string, language = "fr", domain?: string) =>
     request<Course>("/api/courses", {
       method: "POST",
-      body: JSON.stringify({ title, subject, language }),
+      body: JSON.stringify({ title, subject, language, domain }),
     }),
   getCourse: (id: string) => request<CourseDetail>(`/api/courses/${id}`),
   deleteCourse: (id: string) =>

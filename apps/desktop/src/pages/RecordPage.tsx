@@ -16,6 +16,8 @@ export default function RecordPage() {
   const [device, setDevice] = useState<string | undefined>(undefined);
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
+  const [domain, setDomain] = useState("");
+  const [domains, setDomains] = useState<{ key: string; label: string }[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [level, setLevel] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -43,6 +45,10 @@ export default function RecordPage() {
         setDevice(def?.name ?? d[0]?.name);
       })
       .catch((e) => setError(String(e)));
+    api
+      .listDomains()
+      .then(setDomains)
+      .catch(() => setDomains([]));
     return () => stopTimers();
   }, []);
 
@@ -79,6 +85,8 @@ export default function RecordPage() {
       const course = await api.createCourse(
         title || "Cours sans titre",
         subject || undefined,
+        "fr",
+        domain || undefined,
       );
       courseIdRef.current = course.id;
 
@@ -163,6 +171,22 @@ export default function RecordPage() {
                 placeholder="Droit"
                 disabled={phase !== "idle"}
               />
+            </div>
+            <div>
+              <label className="label">Domaine d'encadrement IA (optionnel)</label>
+              <select
+                className="input"
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                disabled={phase !== "idle"}
+              >
+                <option value="">Auto (détecté depuis la matière)</option>
+                {domains.map((d) => (
+                  <option key={d.key} value={d.key}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="label">Microphone</label>

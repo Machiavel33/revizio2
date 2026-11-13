@@ -278,11 +278,12 @@ async def generate_sheet(
     api_key: str,
     language: str = "fr",
     subject: str | None = None,
+    domain_key: str | None = None,
 ) -> dict:
-    """Génère une fiche. `subject` sélectionne le profil d'encadrement du domaine."""
+    """Génère une fiche. `domain_key` (explicite) ou `subject` (auto) choisit le profil."""
     from app.services.domain_profiles import build_domain_instructions, detect_profile
 
-    profile = detect_profile(subject)
+    profile = detect_profile(subject, domain_key)
     domain_block = build_domain_instructions(profile)
 
     if provider == "anthropic":

@@ -44,8 +44,8 @@ def test_detect_sante():
 def test_detect_generic():
     assert detect_profile(None) is GENERIC
     assert detect_profile("") is GENERIC
-    assert detect_profile("Mathématiques") is GENERIC
     assert detect_profile("Histoire") is GENERIC
+    assert detect_profile("Philosophie") is GENERIC
 
 
 def test_detect_accent_insensitive():
@@ -68,3 +68,41 @@ def test_each_profile_has_disclaimer():
     for p in (DROIT, EPS, EDUC_SPEC, POLICE, SANTE):
         assert p.disclaimer, f"{p.key} sans disclaimer"
         assert p.rules, f"{p.key} sans règles"
+
+
+def test_list_profiles():
+    from app.services.domain_profiles import list_profiles
+
+    profiles = list_profiles()
+    keys = {p["key"] for p in profiles}
+    assert "generic" in keys
+    assert "droit" in keys
+    assert "compta" in keys
+    assert "informatique" in keys
+    assert "sciences" in keys
+    assert all("label" in p for p in profiles)
+
+
+def test_explicit_domain_overrides_subject():
+    from app.services.domain_profiles import COMPTA, detect_profile
+
+    # subject dit "droit" mais domain_key explicite = compta -> compta gagne
+    assert detect_profile("Droit pénal", domain_key="compta") is COMPTA
+
+
+def test_get_profile_by_key():
+    from app.services.domain_profiles import GENERIC, get_profile_by_key
+
+    assert get_profile_by_key("generic") is GENERIC
+    assert get_profile_by_key("droit") is DROIT
+    assert get_profile_by_key("inexistant") is None
+    assert get_profile_by_key(None) is None
+
+
+def test_detect_new_domains():
+    from app.services.domain_profiles import COMPTA, DROIT_TRAVAIL, INFORMATIQUE, SCIENCES
+
+    assert detect_profile("Comptabilité générale") is COMPTA
+    assert detect_profile("Droit du travail") is DROIT_TRAVAIL
+    assert detect_profile("Programmation Python") is INFORMATIQUE
+    assert detect_profile("Physique quantique") is SCIENCES
