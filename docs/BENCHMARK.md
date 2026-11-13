@@ -201,3 +201,37 @@ traitement des trames, événements partial/final.
   ou passer `base` pour ~16-20 séances.
 - **Temps réel** : brancher le client desktop sur `WS /stream` (sherpa) pour le direct
   sub-seconde, au lieu du pseudo-live par fenêtres.
+
+---
+
+## 10. Streaming temps réel branché (desktop → API → STT sherpa)
+
+Le client desktop utilise désormais le **streaming sherpa** en priorité (fallback
+transport résilient si indisponible).
+
+### Chaîne
+
+```
+Desktop (useStreamingTranscription)
+  → WS /api/ws/stream (API : auth JWT + relais)
+    → WS /stream (service STT : sherpa-onnx)
+      → transcript.partial / transcript.final (sub-seconde)
+        → persisté dans le transcript du cours
+```
+
+- Le hook desktop réassemble les chunks Rust (1600 éch. = 100 ms) en trames de
+  4000 échantillons (250 ms) attendues par sherpa.
+- L'API relaie les trames et persiste les `final` dans le cours.
+- Validé bout en bout : `ready` → partial/final → persistance en base.
+
+### Scalabilité horizontale
+
+Le service STT n'a plus de `container_name` fixe : on peut lancer N réplicas.
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --scale stt=2
+```
+
+L'API joint `http://stt:8100` et Docker répartit via DNS (round-robin). Validé :
+2 réplicas healthy, API distribue les requêtes. Chaque réplica a son propre pool
+Whisper + moteur sherpa → capacité ≈ N × capacité d'une instance.

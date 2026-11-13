@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import type { InputDevice } from "../lib/types";
 import Waveform from "../components/Waveform";
 import { useResilientTransport } from "../hooks/useResilientTransport";
+import { useStreamingTranscription } from "../hooks/useStreamingTranscription";
 
 type Phase = "idle" | "recording" | "saving";
 
@@ -24,7 +25,10 @@ export default function RecordPage() {
   const [calibrating, setCalibrating] = useState(false);
   const [calibration, setCalibration] = useState<string | null>(null);
 
-  const live = useResilientTransport();
+  // Streaming temps réel (sherpa) en priorité ; transport résilient en secours.
+  const streaming = useStreamingTranscription();
+  const resilient = useResilientTransport();
+  const live = streaming.status === "error" ? resilient : streaming;
 
   const levelTimer = useRef<number | null>(null);
   const clockTimer = useRef<number | null>(null);
@@ -91,8 +95,13 @@ export default function RecordPage() {
       }, 80);
       clockTimer.current = window.setInterval(() => setElapsed((e) => e + 1), 1000);
 
-      // 3. Démarre la transcription live PERSISTÉE sur ce cours
-      void live.start(course.id, "fr");
+      // 3. Démarre la transcription live : streaming sherpa en priorité,
+      //    transport résilient en secours si le streaming échoue.
+      try {
+        await streaming.start(course.id, "fr");
+      } catch {
+        void resilient.start(course.id, "fr");
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -100,7 +109,8 @@ export default function RecordPage() {
 
   async function stop() {
     stopTimers();
-    void live.stop();
+    void streaming.stop();
+    void resilient.stop();
     setPhase("saving");
     setLevel(0);
     try {
@@ -260,12 +270,20 @@ export default function RecordPage() {
             </span>
           </div>
           <div className="flex-1 overflow-y-auto rounded-md bg-[color:var(--bg-inset)] p-4 text-sm leading-relaxed">
-            {live.finalText ? (
-              <p className="text-[color:var(--text-secondary)]">{live.finalText}</p>
+            {live.finalText || streaming.partialText ? (
+              <p className="text-[color:var(--text-secondary)]">
+                {live.finalText}
+                {streaming.partialText && (
+                  <span className="text-[color:var(--text-muted)]">
+                    {live.finalText ? " " : ""}
+                    {streaming.partialText}
+                  </span>
+                )}
+              </p>
             ) : (
               <p className="text-[color:var(--text-muted)]">
                 {live.status === "error"
-                  ? live.error ?? "Transcription live indisponible (clé Deepgram requise)."
+                  ? live.error ?? "Transcription live indisponible."
                   : "Le texte apparaîtra ici pendant l'enregistrement."}
               </p>
             )}

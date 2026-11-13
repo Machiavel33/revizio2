@@ -318,3 +318,157 @@ async def ws_transcribe(websocket: WebSocket) -> None:
             await websocket.close()
         except RuntimeError:
             pass
+
+
+# --- Streaming temps réel (sherpa-onnx via le service STT) ---
+
+
+async def _run_streaming(
+    websocket: WebSocket,
+    course_id: uuid.UUID | None,
+    language: str,
+) -> None:
+    """Relais vers le service STT `/stream` (sherpa-onnx, vrai temps réel).
+
+    Le client envoie des trames PCM16 (4000 échantillons = 8000 octets). L'API
+    relaie au service STT et renvoie partial/final au client. Les finals sont
+    persistés dans le transcript du cours (comme le mode résilient).
+    """
+    import websockets
+
+    stt_ws = settings.stt_service_url.replace("http://", "ws://").replace(
+        "https://", "wss://"
+    ).rstrip("/") + "/stream"
+    session_id = uuid.uuid4()
+
+    try:
+        async with websockets.connect(stt_ws, max_size=None) as stt:
+            await stt.send(
+                json.dumps(
+                    {"type": "init", "session_id": str(session_id), "language": language}
+                )
+            )
+            ready = json.loads(await stt.recv())
+            if ready.get("type") != "ready":
+                await websocket.send_json(
+                    {"type": "error", "message": "Service STT indisponible"}
+                )
+                return
+            await websocket.send_json({"type": "ready", "engine": "sherpa"})
+
+            async def client_to_stt() -> None:
+                while True:
+                    message = await websocket.receive()
+                    if message.get("type") == "websocket.disconnect":
+                        return
+                    if message.get("bytes") is not None:
+                        await stt.send(message["bytes"])
+                    elif message.get("text"):
+                        try:
+                            ctrl = json.loads(message["text"])
+                        except json.JSONDecodeError:
+                            continue
+                        if ctrl.get("type") == "stop":
+                            await stt.send(json.dumps({"type": "stop"}))
+                            return
+
+            async def stt_to_client() -> None:
+                async for raw in stt:
+                    try:
+                        msg = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    mtype = msg.get("type", "")
+                    if mtype == "transcript.partial":
+                        await websocket.send_json(
+                            {"type": "partial", "text": msg.get("text", "")}
+                        )
+                    elif mtype == "transcript.final":
+                        text = msg.get("text", "")
+                        await websocket.send_json({"type": "final", "text": text})
+                        if text and course_id is not None:
+                            await _append_final_segment(course_id, text)
+                    elif mtype == "error":
+                        await websocket.send_json(
+                            {"type": "error", "message": msg.get("message", "")}
+                        )
+
+            import asyncio
+
+            tasks = [
+                asyncio.create_task(client_to_stt()),
+                asyncio.create_task(stt_to_client()),
+            ]
+            try:
+                await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+    except Exception as exc:  # noqa: BLE001
+        try:
+            await websocket.send_json(
+                {"type": "error", "message": f"Streaming indisponible: {exc}"}
+            )
+        except RuntimeError:
+            pass
+
+
+@router.websocket("/ws/stream")
+async def ws_stream(websocket: WebSocket) -> None:
+    """Streaming temps réel sub-seconde (sherpa-onnx via le service STT).
+
+    Protocole client -> serveur :
+      - 1er message texte : {"type":"init","course_id":"<uuid>","language":"fr","token":"<jwt>"}
+      - messages binaires : trames PCM16 mono 16 kHz (4000 échantillons)
+      - {"type":"stop"} pour terminer
+    Serveur -> client :
+      - {"type":"ready","engine":"sherpa"}
+      - {"type":"partial","text":"..."} / {"type":"final","text":"..."}
+      - {"type":"error","message":"..."}
+    """
+    await websocket.accept()
+    try:
+        init_raw = await websocket.receive_text()
+        init = json.loads(init_raw)
+    except (WebSocketDisconnect, json.JSONDecodeError):
+        await websocket.close(code=1003)
+        return
+
+    if init.get("type") != "init":
+        await websocket.send_json({"type": "error", "message": "Message init attendu"})
+        await websocket.close(code=1003)
+        return
+
+    course_id: uuid.UUID | None = None
+    if init.get("course_id"):
+        try:
+            course_id = uuid.UUID(init["course_id"])
+        except (ValueError, TypeError):
+            course_id = None
+
+    auth = await _authenticate(init.get("token", ""), course_id)
+    if auth is None:
+        await websocket.send_json(
+            {"type": "error", "message": "Auth invalide ou cours introuvable"}
+        )
+        await websocket.close(code=1008)
+        return
+
+    if not settings.stt_service_url:
+        await websocket.send_json(
+            {"type": "error", "message": "Service STT non configuré"}
+        )
+        await websocket.close(code=1013)
+        return
+
+    language = init.get("language", "fr")
+    try:
+        await _run_streaming(websocket, course_id, language)
+    except WebSocketDisconnect:
+        return
+    finally:
+        try:
+            await websocket.close()
+        except RuntimeError:
+            pass

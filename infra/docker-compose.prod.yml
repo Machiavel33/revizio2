@@ -125,11 +125,14 @@ services:
 
   # Service STT découplé : faster-whisper batch + sherpa-onnx streaming.
   # Isolé de l'API pour que la transcription ne bloque jamais les requêtes HTTP/WS.
+  # Service STT découplé : faster-whisper batch + sherpa-onnx streaming.
+  # Isolé de l'API pour que la transcription ne bloque jamais les requêtes HTTP/WS.
+  # Scalabilité horizontale : `docker compose up -d --scale stt=N` (pas de
+  # container_name fixe ; l'API joint `http://stt:8100` et Docker répartit via DNS).
   stt:
     build:
       context: ../services/stt
       dockerfile: Dockerfile
-    container_name: revizio-stt
     restart: unless-stopped
     environment:
       APP_ENV: production
