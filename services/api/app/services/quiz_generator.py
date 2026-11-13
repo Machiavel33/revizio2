@@ -7,6 +7,8 @@ import json
 
 import httpx
 
+from app.services.provider_errors import raise_provider_error
+
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 
@@ -75,7 +77,8 @@ async def _anthropic(prompt: str, api_key: str, model: str) -> dict:
     }
     async with httpx.AsyncClient(timeout=180) as client:
         resp = await client.post(ANTHROPIC_URL, headers=headers, json=body)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise_provider_error("anthropic", resp)
         payload = resp.json()
     text = "".join(b.get("text", "") for b in payload.get("content", []) if b.get("type") == "text")
     return {"content": _parse_json(text), "model": model}
@@ -93,7 +96,8 @@ async def _openai(prompt: str, api_key: str, model: str) -> dict:
     }
     async with httpx.AsyncClient(timeout=180) as client:
         resp = await client.post(OPENAI_CHAT_URL, headers=headers, json=body)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise_provider_error("openai", resp)
         payload = resp.json()
     text = payload["choices"][0]["message"]["content"]
     return {"content": _parse_json(text), "model": model}
