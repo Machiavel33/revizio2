@@ -48,20 +48,40 @@ export interface Transcript {
 export interface KeyConcept {
   term: string;
   definition: string;
+  importance?: "high" | "medium";
+  example?: string;
 }
 export interface SheetSection {
   heading: string;
+  type?: SectionType;
   points: string[];
+}
+export interface Formula {
+  name: string;
+  expression: string;
+  meaning?: string;
 }
 export interface Flashcard {
   question: string;
   answer: string;
 }
+export type SectionType =
+  | "normal"
+  | "definition"
+  | "formula"
+  | "example"
+  | "warning"
+  | "tip";
+
 export interface StudySheetContent {
   title: string;
   summary: string;
+  learning_objectives?: string[];
   key_concepts: KeyConcept[];
   sections: SheetSection[];
+  formulas?: Formula[];
+  pitfalls?: string[];
+  mnemonics?: string[];
   flashcards: Flashcard[];
   review_questions: string[];
   estimated_review_time_min: number;

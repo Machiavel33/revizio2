@@ -45,6 +45,11 @@ export async function exportSheetToPdf(sheet: StudySheet): Promise<void> {
   doc.text(c.title || "Fiche de révision", MARGIN, y);
   y += 10;
 
+  if (c.learning_objectives && c.learning_objectives.length) {
+    heading("Objectifs d'apprentissage");
+    for (const o of c.learning_objectives) paragraph(`• ${o}`, 10);
+  }
+
   heading("Résumé");
   paragraph(c.summary);
   paragraph(`Temps de révision estimé : ${c.estimated_review_time_min} min`, 9);
@@ -56,15 +61,49 @@ export async function exportSheetToPdf(sheet: StudySheet): Promise<void> {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
       doc.setTextColor(20, 20, 30);
-      doc.text(`• ${k.term}`, MARGIN, y);
+      const star = k.importance === "high" ? "★ " : "• ";
+      doc.text(`${star}${k.term}`, MARGIN, y);
       y += 5;
       paragraph(k.definition, 9);
+      if (k.example) paragraph(`Ex. : ${k.example}`, 8);
     }
   }
 
+  if (c.formulas && c.formulas.length) {
+    heading("Formules");
+    for (const f of c.formulas) {
+      ensureSpace(8);
+      doc.setFont("courier", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(120, 40, 160);
+      doc.text(f.expression, MARGIN, y);
+      y += 5;
+      if (f.name) paragraph(f.name, 9);
+      if (f.meaning) paragraph(f.meaning, 8);
+    }
+  }
+
+  const SECTION_LABEL: Record<string, string> = {
+    definition: " [Définition]",
+    formula: " [Formule]",
+    example: " [Exemple]",
+    warning: " [Attention]",
+    tip: " [Astuce]",
+  };
   for (const s of c.sections) {
-    heading(s.heading, 12);
+    const label = s.type ? SECTION_LABEL[s.type] ?? "" : "";
+    heading(`${s.heading}${label}`, 12);
     for (const p of s.points) paragraph(`– ${p}`, 10);
+  }
+
+  if (c.pitfalls && c.pitfalls.length) {
+    heading("Pièges à éviter");
+    for (const p of c.pitfalls) paragraph(`⚠ ${p}`, 10);
+  }
+
+  if (c.mnemonics && c.mnemonics.length) {
+    heading("Moyens mnémotechniques");
+    for (const m of c.mnemonics) paragraph(`✦ ${m}`, 10);
   }
 
   if (c.flashcards.length) {

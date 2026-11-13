@@ -44,3 +44,60 @@ def test_generic_error():
     with pytest.raises(ProviderError) as e:
         raise_provider_error("openai", r)
     assert e.value.code == "provider_error"
+
+
+# --- Normalisation des fiches ---
+
+
+def test_normalize_sheet_fills_defaults():
+    from app.services.sheet_generator import normalize_sheet
+
+    out = normalize_sheet({"title": "T", "summary": "S"})
+    assert out["title"] == "T"
+    assert out["learning_objectives"] == []
+    assert out["key_concepts"] == []
+    assert out["sections"] == []
+    assert out["formulas"] == []
+    assert out["pitfalls"] == []
+    assert out["mnemonics"] == []
+    assert out["estimated_review_time_min"] == 15
+
+
+def test_normalize_sheet_validates_section_type():
+    from app.services.sheet_generator import normalize_sheet
+
+    out = normalize_sheet(
+        {
+            "sections": [
+                {"heading": "A", "type": "warning", "points": ["p1", 123, "p2"]},
+                {"heading": "B", "type": "invalid", "points": ["x"]},
+            ]
+        }
+    )
+    assert out["sections"][0]["type"] == "warning"
+    assert out["sections"][0]["points"] == ["p1", "p2"]  # 123 filtré
+    assert out["sections"][1]["type"] == "normal"  # type invalide -> normal
+
+
+def test_normalize_sheet_concepts_importance():
+    from app.services.sheet_generator import normalize_sheet
+
+    out = normalize_sheet(
+        {
+            "key_concepts": [
+                {"term": "A", "definition": "d", "importance": "high", "example": "e"},
+                {"term": "B", "definition": "d", "importance": "bogus"},
+            ]
+        }
+    )
+    assert out["key_concepts"][0]["importance"] == "high"
+    assert out["key_concepts"][0]["example"] == "e"
+    assert out["key_concepts"][1]["importance"] == "medium"  # invalide -> medium
+
+
+def test_normalize_sheet_handles_garbage():
+    from app.services.sheet_generator import normalize_sheet
+
+    out = normalize_sheet("not a dict")  # type: ignore[arg-type]
+    assert out["title"] == "Fiche de révision"
+    assert out["sections"] == []
